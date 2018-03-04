@@ -1,6 +1,7 @@
 package ginhandler
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/kucjac/go-rest-sdk"
 )
@@ -11,10 +12,21 @@ type GinJsonHandler struct {
 
 func (g *GinJsonHandler) Create(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		err := c.ShouldBindJSON(&model)
+		obj := &model
+		err := restsdk.BindJSON(c.Request, &obj, &restsdk.FormPolicy{FailOnError: true})
 		if err != nil {
-
+			resErr := restsdk.ErrInvalidJSONRequest
+			resErr.Detail += fmt.Sprintf(" %s", err.Error())
+			restsdk.ResponseWithError(400, resErr)
+			return
 		}
+		err = g.repository.Create(obj)
+		if err != nil {
+			// handle errors
+			restsdk.ResponseWithError(400, err)
+			return
+		}
+		restsdk.ResponseWithOk()
 	}
 }
 

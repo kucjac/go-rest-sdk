@@ -44,7 +44,7 @@ func (g *GORMRepository) Get(req interface{}) (res interface{}, err error) {
 }
 
 func (g *GORMRepository) List(
-	req interface{}, params *restsdk.ListParameters,
+	req interface{},
 ) (res interface{}, err error) {
 	// Get Slice of pointer type 'req'
 	res = restsdk.SliceOfPtrType(req)
@@ -58,7 +58,7 @@ func (g *GORMRepository) List(
 }
 
 func (g *GORMRepository) ListWithParams(
-	req interface{}, params restsdk.ListParameters,
+	req interface{}, params *restsdk.ListParameters,
 ) (res interface{}, err error) {
 	// Get Slice of pointer type 'req'
 	res = restsdk.SliceOfPtrType(req)

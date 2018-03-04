@@ -9,6 +9,7 @@ import (
 var (
 	ErrNilPointerProvided = errors.New("Provided nil pointer")
 	ErrPtrNotProvided     = errors.New("Provided arugment is raw struct type. Provide a pointer to struct")
+	ErrUnknownType        = errors.New("Unknown type of the field")
 )
 
 // ResponseErrorLink is an object that contains
