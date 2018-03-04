@@ -1,9 +1,7 @@
 package restsdk
 
 import (
-	"fmt"
 	"reflect"
-	"strings"
 )
 
 func getType(req interface{}) reflect.Type {
@@ -13,6 +11,7 @@ func getType(req interface{}) reflect.Type {
 	// If the object is a pointer and dereference it
 	for {
 		if t.Kind() == reflect.Ptr {
+			t = t.Elem()
 		} else {
 			break
 		}
@@ -48,11 +47,9 @@ func SliceOfPtrType(req interface{}) (res interface{}) {
 	return res
 }
 
-// CollectionName retrieves the collection (table) name for given requested object
-func CollectionName(req interface{}) (collection string) {
+func StructName(req interface{}) string {
 	t := getType(req)
-	collection = fmt.Sprintf("%ss", strings.ToLower(t.Name()))
-	return collection
+	return t.Name()
 }
 
 // func BindQuery(req interface{}, query map[string][]string) error {

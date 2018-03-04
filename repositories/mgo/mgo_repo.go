@@ -1,6 +1,7 @@
 package mgorepo
 
 import (
+	"github.com/jinzhu/inflection"
 	"github.com/kucjac/go-rest-sdk"
 	"gopkg.in/mgo.v2"
 )
@@ -45,6 +46,6 @@ func (m *MGORepository) Delete(req interface{}) (err error) {
 }
 
 func (m *MGORepository) collection(req interface{}) *mgo.Collection {
-	collection := restsdk.CollectionName(req)
+	collection := inflection.Plural(restsdk.StructName(req))
 	return m.db.DB(m.dbname).C(collection)
 }
