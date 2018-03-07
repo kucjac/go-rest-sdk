@@ -1,4 +1,4 @@
-package restsdk
+package resterrors
 
 import (
 	"encoding/json"

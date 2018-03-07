@@ -3,6 +3,7 @@ package restsdk
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -161,10 +162,11 @@ func mapForm(ptr interface{}, form map[string][]string, policy *FormPolicy) erro
 		if sFieldKind == reflect.Slice && elemNum > 0 {
 			sliceKind := sField.Type().Elem().Kind()
 			fieldSlice := reflect.MakeSlice(sField.Type(), elemNum, elemNum)
+			log.Println(sliceKind)
 			// Iterate over query elements and add to fieldSlice
 			for j := 0; j < elemNum; j++ {
 				// set with given value
-				err := setFieldWithType(sliceKind, formValue[j], fieldSlice.Index(i))
+				err := setFieldWithType(sliceKind, formValue[j], fieldSlice.Index(j))
 				if policy.FailOnError && err != nil {
 					return err
 				}
@@ -172,7 +174,7 @@ func mapForm(ptr interface{}, form map[string][]string, policy *FormPolicy) erro
 			// Set 'ptr' value for field of index 'i' with 'fieldSlice'
 			v.Field(i).Set(fieldSlice)
 		} else {
-			// check if the query is of type time
+			// check if the field is of type time
 			if _, isTime := sField.Interface().(time.Time); isTime {
 				err := setTimeField(formValue[0], tField, sField)
 				if policy.FailOnError && err != nil {
@@ -200,39 +202,39 @@ func setFieldWithType(
 	case reflect.String:
 		field.SetString(val)
 	case reflect.Int:
-		setIntField(val, field, 0)
+		err = setIntField(val, field, 0)
 	case reflect.Int8:
-		setIntField(val, field, 8)
+		err = setIntField(val, field, 8)
 	case reflect.Int16:
-		setIntField(val, field, 16)
+		err = setIntField(val, field, 16)
 	case reflect.Int32:
-		setIntField(val, field, 32)
+		err = setIntField(val, field, 32)
 	case reflect.Int64:
-		setIntField(val, field, 64)
+		err = setIntField(val, field, 64)
 
 	case reflect.Uint:
-		setUintField(val, field, 0)
+		err = setUintField(val, field, 0)
 	case reflect.Uint8:
-		setUintField(val, field, 8)
+		err = setUintField(val, field, 8)
 	case reflect.Uint16:
-		setUintField(val, field, 16)
+		err = setUintField(val, field, 16)
 	case reflect.Uint32:
-		setUintField(val, field, 32)
+		err = setUintField(val, field, 32)
 	case reflect.Uint64:
-		setUintField(val, field, 64)
+		err = setUintField(val, field, 64)
 
 	case reflect.Float32:
-		setFloatField(val, field, 32)
+		err = setFloatField(val, field, 32)
 	case reflect.Float64:
-		setFloatField(val, field, 64)
+		err = setFloatField(val, field, 64)
 
 	case reflect.Bool:
-		setBoolField(val, field)
+		err = setBoolField(val, field)
 
 	default:
 		return ErrUnknownType
 	}
-	return nil
+	return err
 }
 
 func setIntField(val string, field reflect.Value, bitSize int) (err error) {

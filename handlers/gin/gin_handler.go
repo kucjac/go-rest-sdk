@@ -15,7 +15,7 @@ func (g *GinJsonHandler) Create(model interface{}) gin.HandlerFunc {
 		obj := &model
 		err := restsdk.BindJSON(c.Request, &obj, &restsdk.FormPolicy{FailOnError: true})
 		if err != nil {
-			resErr := restsdk.ErrInvalidJSONRequest
+			resErr := &restsdk.ErrInvalidJSONRequest
 			resErr.Detail += fmt.Sprintf(" %s", err.Error())
 			restsdk.ResponseWithError(400, resErr)
 			return
