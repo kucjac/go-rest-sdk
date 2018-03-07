@@ -3,12 +3,17 @@ package restsdk
 import (
 	"encoding/json"
 	"errors"
-	"log"
+	"github.com/smartystreets/goconvey/convey"
 	"net/http"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
+)
+
+var (
+	ErrUnknownType    = errors.New("Unknown data type")
+	ErrIncorrectModel = errors.New("Given model do not have ID field. In order to set ID, it should implement IDSetter or contain field ID")
 )
 
 type FormPolicy struct {
@@ -24,6 +29,10 @@ var (
 		Tag:         "form",
 	}
 )
+
+type IDSetter interface {
+	SetID(id uint64)
+}
 
 // ObjOfType returns the empty object of type given in request
 // For example if req is type Foo it returns empty object of type Foo
@@ -73,6 +82,10 @@ func BindQuery(req *http.Request, model interface{}, policy *FormPolicy) error {
 	return nil
 }
 
+func BindParams(parameters map[string][]string, model interface{}, policy *FormPolicy) error {
+	return nil
+}
+
 // BindJSON binds the request body and decode it into provided model
 func BindJSON(req *http.Request, model interface{}, policy *FormPolicy) error {
 	if policy == nil {
@@ -99,6 +112,45 @@ func getType(req interface{}) reflect.Type {
 		}
 	}
 	return t
+}
+
+// SetID sets the ID of provided model.
+// If model implements IDSetter interface it uses SetID method at first.
+// Otherwise checks whether provided model contains 'ID' or 'Id' field
+// And parses the 'id' argument
+// Returns error if provided argument is not appropiate for given field
+// 	or there is no ID field in the model
+func SetID(model interface{}, id string) error {
+	// Check if given model implements IDSetter interface
+	if setter, ok := model.(IDSetter); ok {
+		uintID, err := strconv.ParseUint(id, 10, 64)
+		if err != nil {
+			return err
+		}
+		setter.SetID(uintID)
+		return nil
+	}
+
+	t := reflect.TypeOf(model).Elem()
+	v := reflect.ValueOf(model).Elem()
+
+	for i := 0; i < t.NumField(); i++ {
+		tField := t.Field(i)
+		sField := v.Field(i)
+
+		if !sField.CanSet() {
+			continue
+		}
+
+		if strings.ToLower(tField.Name) == "id" {
+			err := setFieldWithType(sField.Kind(), id, sField)
+			if err != nil {
+				return err
+			}
+			return nil
+		}
+	}
+	return ErrIncorrectModel
 }
 
 func mapForm(ptr interface{}, form map[string][]string, policy *FormPolicy) error {
@@ -131,6 +183,7 @@ func mapForm(ptr interface{}, form map[string][]string, policy *FormPolicy) erro
 			if sFieldKind == reflect.Struct {
 				// mapQuery recursively if the field is a struct
 				err := mapForm(sField.Addr().Interface(), form, policy)
+				convey.Println(tField.Name)
 				// check error only if the policy requirers it
 				if policy.FailOnError {
 					if err != nil {
@@ -162,7 +215,6 @@ func mapForm(ptr interface{}, form map[string][]string, policy *FormPolicy) erro
 		if sFieldKind == reflect.Slice && elemNum > 0 {
 			sliceKind := sField.Type().Elem().Kind()
 			fieldSlice := reflect.MakeSlice(sField.Type(), elemNum, elemNum)
-			log.Println(sliceKind)
 			// Iterate over query elements and add to fieldSlice
 			for j := 0; j < elemNum; j++ {
 				// set with given value

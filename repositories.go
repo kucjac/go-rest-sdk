@@ -7,6 +7,13 @@ type ListParameters struct {
 	Order  string
 }
 
+func (l ListParameters) ContainsParameters() bool {
+	if l.Limit != 0 || l.Offset != 0 || l.Order != "" {
+		return true
+	}
+	return false
+}
+
 type GenericRepository interface {
 	// Create or add new entry
 	Create(req interface{}) (err error)

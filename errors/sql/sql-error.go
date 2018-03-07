@@ -7,7 +7,7 @@ type SQLError struct {
 
 type ErrorCode string
 
-var SQLErrors map[ErrorCode]string {
+var SQLErrors = map[ErrorCode]string{
 	// Class 00 - Successful Completion
 	"00000": "successful_completion",
 	// Class 01 - Warning
@@ -287,13 +287,13 @@ var SQLErrors map[ErrorCode]string {
 
 type MySQLErrorMap map[int16]ErrorCode
 
-func (m *MySQLErrorMap) GetCode(MySQLErrNo int16) ErrorCode {
-	code, ok := m[MySQLErrNo]
-	if !ok {
-		return "S1000"
-	}
-	return code
-}
+// func (m *MySQLErrorMap) GetCode(MySQLErrNo int16) ErrorCode {
+// 	code, ok := m[MySQLErrNo]
+// 	if !ok {
+// 		return "S1000"
+// 	}
+// 	return code
+// }
 
 // MySQL Error codes to OpenCodes
 var mySQLErrorMap = MySQLErrorMap{

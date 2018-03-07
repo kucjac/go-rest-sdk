@@ -59,6 +59,49 @@ func TestResponseErrorAddLink(t *testing.T) {
 	})
 }
 
+func TestResponseErrorExtendDetail(t *testing.T) {
+	Convey("Having a response error with initial detail", t, func() {
+		err := &ResponseError{Detail: "Detail"}
+
+		Convey("With usage of Extend Detail method the Detail would be extended by argument", func() {
+			err.ExtendDetail("Extend")
+
+			So(err.Detail, ShouldNotEqual, "Detail")
+			So(err.Detail, ShouldNotEqual, "Extend")
+			So(err.Detail, ShouldNotEqual, "DetailExtend")
+			So(err.Detail, ShouldEqual, "Detail. Extend")
+		})
+
+		errWithDot := &ResponseError{Detail: "Detail with dot."}
+
+		Convey("When last rune is '.' ExtendDetail method would add only a space and additional info", func() {
+			errWithDot.ExtendDetail("Extending Info")
+
+			So(errWithDot.Detail, ShouldNotEqual, "Detail with dot.")
+			So(errWithDot.Detail, ShouldNotEqual, "Extending Info")
+			So(errWithDot.Detail, ShouldNotEqual, "Detail with dot.. Extending Info")
+		})
+
+		errWithSpace := &ResponseError{Detail: "Detail with space "}
+
+		Convey("When the space is at the end then the extendance would be appended straightforward", func() {
+			errWithSpace.ExtendDetail("Extended detail")
+
+			So(errWithSpace.Detail, ShouldEqual, "Detail with space Extended detail")
+		})
+
+		errWithEmptyDetail := &ResponseError{}
+
+		Convey("When the detail is empty, extending it just adds the value", func() {
+			errWithEmptyDetail.ExtendDetail("Extended")
+
+			So(errWithEmptyDetail.Detail, ShouldNotStartWith, " ")
+			So(errWithEmptyDetail.Detail, ShouldEqual, "Extended")
+		})
+	})
+
+}
+
 func TestResponseErrorErrorMethod(t *testing.T) {
 	Convey("Having a ResponseError", t, func() {
 		rerr := &ResponseError{

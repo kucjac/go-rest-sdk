@@ -49,6 +49,9 @@ type ResponseError struct {
 	// occurrence of the problem.
 	Detail string `json:"detail,omitempty"`
 
+	// Public detail that is allowed for public view
+	Public string `json:"public,omitempty"`
+
 	// Links contains the the link that leads to further details about this particular occurrence
 	// of the problem
 	Links *ErrorLink `json:"links,omitempty"`
@@ -75,6 +78,23 @@ func (r *ResponseError) AddLink(urlBase string) error {
 	}
 	r.Links = &ErrorLink{About: fmt.Sprintf("%s/%s", url.String(), r.Code)}
 	return nil
+}
+
+func (r *ResponseError) ExtendDetail(moreInfo string) {
+	if len(r.Detail) != 0 {
+		last := r.Detail[len(r.Detail)-1:]
+
+		if last == "." {
+			r.Detail += " " + moreInfo
+		} else if last == " " {
+			r.Detail += moreInfo
+		} else {
+			r.Detail += ". " + moreInfo
+		}
+	} else {
+		r.Detail = moreInfo
+	}
+
 }
 
 // Error implements error interface

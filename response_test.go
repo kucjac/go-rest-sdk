@@ -31,15 +31,7 @@ func TestResponseWithOk(t *testing.T) {
 
 func TestResponseWithError(t *testing.T) {
 	Convey("While processing something, an error occured", t, func() {
-		err := &ResponseError{
-			ErrorCategory: ErrorCategory{
-				Code:  "101",
-				Title: "Test error",
-			},
-			ID:     "12",
-			Detail: "Some detail",
-			Status: "400",
-		}
+		err := ErrIncorrectModel
 		Convey("The error is of http type 400 - Bad Request", func() {
 			httpStatus := http.StatusBadRequest
 

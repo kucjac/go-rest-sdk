@@ -13,6 +13,18 @@ type Foo struct {
 	Bar string `json:"bar"`
 }
 
+type FooNess struct {
+	BarNess uint `form:"custombarness"`
+}
+
+type IDSetterModel struct {
+	ID uint64
+}
+
+func (m *IDSetterModel) SetID(id uint64) {
+	m.ID = id
+}
+
 func TestGetType(t *testing.T) {
 	Convey("Having an object of type *Foo", t, func() {
 		obj := &Foo{Bar: "bar"}
@@ -156,6 +168,7 @@ func TestMapForm(t *testing.T) {
 		NoValueTime       time.Time `form:"novaluetime" time_format:"2006-01-02" time_utc:"1"`
 		BlankTimeFormat   time.Time `form:"blanktimeformat" time_format:""`
 		EmptyBool         bool
+		Fooness           FooNess
 	}
 
 	Convey("Having a struct containing all possible basic fields", t, func() {
@@ -213,7 +226,7 @@ func TestMapForm(t *testing.T) {
 				})
 			})
 		})
-		Convey("Using policy that does not throw errors", func() {
+		Convey("Using policy that does throw errors", func() {
 			policy := &FormPolicy{FailOnError: true, Tag: "testing", TaggedOnly: true}
 
 			Convey("Having a map containg one correct and one incorrect value", func() {
@@ -241,6 +254,20 @@ func TestMapForm(t *testing.T) {
 					So(err, ShouldBeError)
 					Printf("Uint8Value: %v", mapTestObj3.Uint8Field)
 					So(mapTestObj3.Uint8Field, ShouldNotEqual, -1)
+
+				})
+			})
+
+			Convey("Having an incorrect value for nested struct", func() {
+				mapform3 := map[string][]string{
+					"barness": {"-1"},
+				}
+				Convey("Should throw error and not bind any value to it", func() {
+					mapTestObj4 := &mapTest{}
+					err := mapForm(mapTestObj4, mapform3, &FormPolicy{FailOnError: true})
+
+					So(mapTestObj4.Fooness.BarNess, ShouldBeZeroValue)
+					So(err, ShouldBeError)
 
 				})
 			})
@@ -311,6 +338,23 @@ func TestBindJSON(t *testing.T) {
 				So(model.Bar, ShouldEqual, "barcontent")
 			})
 		})
+
+	})
+
+	Convey("Having a request with incorrect json body", t, func() {
+		req := httptest.NewRequest("POST", "/jsonincorrect", strings.NewReader(`{"Bar":"nobrackets"`))
+
+		Convey("Using a policy with FailOnError", func() {
+			var policy *FormPolicy = &FormPolicy{FailOnError: true}
+
+			Convey("Decoding the json request will return error", func() {
+				model := Foo{}
+				err := BindJSON(req, &model, policy)
+
+				So(err, ShouldBeError)
+				So(model.Bar, ShouldBeZeroValue)
+			})
+		})
 	})
 }
 
@@ -328,4 +372,67 @@ func TestSetBoolValue(t *testing.T) {
 			})
 		})
 	})
+}
+
+func TestSetID(t *testing.T) {
+	Convey("Having a id string value", t, func() {
+
+		var correctID string = "32"
+		var incorrectID string = "-32"
+
+		Convey("And a model containing uint ID field", func() {
+			type Model struct {
+				ID uint
+			}
+			model := &Model{}
+
+			Convey("Trying to set incorrectID to its ID field ", func() {
+				err := SetID(model, incorrectID)
+
+				So(err, ShouldBeError)
+				So(model.ID, ShouldBeZeroValue)
+			})
+
+			Convey("Trying to set correctID to its ID field", func() {
+				err := SetID(model, correctID)
+
+				So(err, ShouldBeNil)
+				So(model.ID, ShouldEqual, 32)
+			})
+		})
+		Convey("And a model that does not contain any ID field", func() {
+			type Model struct {
+				NotIDField string
+				// private fields cannot be set - ignored
+				id uint
+			}
+
+			model := &Model{}
+
+			Convey("Trying to set any ID value", func() {
+
+				err := SetID(model, correctID)
+
+				So(err, ShouldBeError)
+				So(err, ShouldEqual, ErrIncorrectModel)
+			})
+		})
+		Convey("A model that implements IDSetter interface", func() {
+			idSetterModel := &IDSetterModel{}
+
+			Convey("ID is being set by idSetter method", func() {
+				err := SetID(idSetterModel, correctID)
+
+				So(err, ShouldBeNil)
+				So(idSetterModel.ID, ShouldEqual, 32)
+
+				Convey("But still it must be correct value", func() {
+					err = SetID(idSetterModel, incorrectID)
+
+					So(err, ShouldBeError)
+				})
+			})
+		})
+	})
+
 }
