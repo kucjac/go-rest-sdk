@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"github.com/jinzhu/gorm"
 	"github.com/kucjac/go-rest-sdk"
+	"github.com/kucjac/go-rest-sdk/errors/dberrors"
+	"github.com/kucjac/go-rest-sdk/errors/dberrors/postgres"
+	"github.com/kucjac/go-rest-sdk/errors/dberrors/sqlite"
 	"reflect"
 )
 
 type GORMRepository struct {
-	db *gorm.DB
+	db  *gorm.DB
+	rcg dberrors.DBErrorRecogniser
 }
 
 // Initialize the gorm repository
@@ -24,6 +28,9 @@ func (g *GORMRepository) Init(db interface{}) (err error) {
 		return
 	}
 	g.db = conn
+
+	dialect := g.db.Dialect().GetName()
+
 	return nil
 }
 
@@ -97,4 +104,19 @@ func (g *GORMRepository) Delete(req interface{}) (err error) {
 		return err
 	}
 	return nil
+}
+
+func (g *GORMRepository) selectRecogniser() (err error) {
+	dialect := g.db.Dialect().GetName()
+
+	switch dialect {
+	case "postgres":
+		g.rcg = postgres.PGRecogniser
+	case "mysql":
+	case "sqlite3":
+		g.rcg = sqlite.SQLiteRecogniser
+	default:
+		return errors.New("Unknown dialect")
+	}
+
 }

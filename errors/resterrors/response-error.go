@@ -49,17 +49,17 @@ type ResponseError struct {
 	// occurrence of the problem.
 	Detail string `json:"detail,omitempty"`
 
-	// Public detail that is allowed for public view
-	Public string `json:"public,omitempty"`
-
 	// Links contains the the link that leads to further details about this particular occurrence
 	// of the problem
 	Links *ErrorLink `json:"links,omitempty"`
+
+	// Err keeps the internal error message for logging purpose
+	err error
 }
 
 // ResponseErrorWithCategory prepares response error using 'category' argument.
 func ResponseErrorWithCategory(err error, category ErrorCategory) *ResponseError {
-	return &ResponseError{ErrorCategory: category, Detail: err.Error()}
+	return &ResponseError{ErrorCategory: category, err: err}
 }
 
 // AddLink adds the link to the Error Category.
@@ -99,5 +99,5 @@ func (r *ResponseError) ExtendDetail(moreInfo string) {
 
 // Error implements error interface
 func (r *ResponseError) Error() string {
-	return fmt.Sprintf("%s: %s", r.ErrorCategory, r.Detail)
+	return fmt.Sprintf("%s-%s: %s", r.Code, r.ID, r.err.Error())
 }
