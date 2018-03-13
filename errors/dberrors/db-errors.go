@@ -25,6 +25,8 @@ var (
 	// Connection Exception
 	ErrConnExc = &DBError{Title: "Connection exception"}
 
+	ErrCardinalityViolation = &DBError{Title: "Cardinality violation"}
+
 	// Data Exception
 	ErrDataException = &DBError{Title: "Data Exception"}
 
@@ -50,6 +52,9 @@ var (
 
 	// Invalid Schema Name
 	ErrInvalidSchemaName = &DBError{Title: "Invalid Schema Name"}
+
+	// Invalid Catalog Name
+	ErrInvalidCatalogName = &DBError{Title: "Invalid Catalog Name"}
 
 	// Syntax Error
 	ErrInvalidSyntax         = &DBError{Title: "Syntax Error"}

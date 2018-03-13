@@ -2,17 +2,16 @@ package resterrors
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	. "github.com/smartystreets/goconvey/convey"
 	"testing"
 )
 
 func TestResponseErrorAddLink(t *testing.T) {
-	Convey("Given an Error Category", t, func() {
+	Convey("Given a Response Error.", t, func() {
 		var testError ResponseError = ResponseError{
 			ID:     "806x",
-			Detail: "Test Detail",
+			Detail: &Detail{Title: "Test Detail"},
 		}
 
 		Convey("We add link for the following urlbase: http://host.com/errors", func() {
@@ -22,8 +21,7 @@ func TestResponseErrorAddLink(t *testing.T) {
 			Convey(`Then there should be no error and 
 				the link should contain urlBase with code`, func() {
 				So(err, ShouldBeNil)
-				So(
-					testError.Links.About,
+				So(testError.Links.About,
 					ShouldEqual,
 					fmt.Sprintf("%s/%s", urlBase, testError.Code))
 			})
@@ -61,42 +59,27 @@ func TestResponseErrorAddLink(t *testing.T) {
 
 func TestResponseErrorExtendDetail(t *testing.T) {
 	Convey("Having a response error with initial detail", t, func() {
-		err := &ResponseError{Detail: "Detail"}
+		err := &ResponseError{Detail: &Detail{Title: "Detail"}}
 
-		Convey("With usage of Extend Detail method the Detail would be extended by argument", func() {
-			err.ExtendDetail("Extend")
+		Convey("With usage of AddDetialInfo method the Detail would be extended by argument", func() {
+			var info string = "Added info."
+			err.AddDetailInfo(info)
 
-			So(err.Detail, ShouldNotEqual, "Detail")
-			So(err.Detail, ShouldNotEqual, "Extend")
-			So(err.Detail, ShouldNotEqual, "DetailExtend")
-			So(err.Detail, ShouldEqual, "Detail. Extend")
-		})
-
-		errWithDot := &ResponseError{Detail: "Detail with dot."}
-
-		Convey("When last rune is '.' ExtendDetail method would add only a space and additional info", func() {
-			errWithDot.ExtendDetail("Extending Info")
-
-			So(errWithDot.Detail, ShouldNotEqual, "Detail with dot.")
-			So(errWithDot.Detail, ShouldNotEqual, "Extending Info")
-			So(errWithDot.Detail, ShouldNotEqual, "Detail with dot.. Extending Info")
-		})
-
-		errWithSpace := &ResponseError{Detail: "Detail with space "}
-
-		Convey("When the space is at the end then the extendance would be appended straightforward", func() {
-			errWithSpace.ExtendDetail("Extended detail")
-
-			So(errWithSpace.Detail, ShouldEqual, "Detail with space Extended detail")
+			So(err.Detail.Title, ShouldEqual, "Detail")
+			So(err.Detail.Info, ShouldContain, info)
+			So(err.Detail.Title, ShouldNotEqual, "DetailExtend")
+			So(err.Detail, ShouldResemble, &Detail{Title: "Detail", Info: []string{info}})
 		})
 
 		errWithEmptyDetail := &ResponseError{}
 
 		Convey("When the detail is empty, extending it just adds the value", func() {
-			errWithEmptyDetail.ExtendDetail("Extended")
+			So(errWithEmptyDetail.Detail, ShouldBeNil)
 
-			So(errWithEmptyDetail.Detail, ShouldNotStartWith, " ")
-			So(errWithEmptyDetail.Detail, ShouldEqual, "Extended")
+			errWithEmptyDetail.AddDetailInfo("Extended")
+
+			So(errWithEmptyDetail.Detail, ShouldNotBeNil)
+			So(errWithEmptyDetail.Detail.Info, ShouldContain, "Extended")
 		})
 	})
 
@@ -105,15 +88,13 @@ func TestResponseErrorExtendDetail(t *testing.T) {
 func TestResponseErrorErrorMethod(t *testing.T) {
 	Convey("Having a ResponseError", t, func() {
 		rerr := &ResponseError{
-			ErrorCategory: ErrorCategory{
-				Code:  "8132",
-				Title: "The title",
-			},
+			Code: "CODE8132",
+			ID:   "ID123",
 		}
 		Convey("The Error method should be combination of code and title", func() {
 			errValue := rerr.Error()
 			So(errValue, ShouldContainSubstring, rerr.Code)
-			So(errValue, ShouldContainSubstring, rerr.Title)
+			So(errValue, ShouldContainSubstring, rerr.ID)
 		})
 	})
 }
@@ -121,13 +102,11 @@ func TestResponseErrorErrorMethod(t *testing.T) {
 func TestMarshalingResponseError(t *testing.T) {
 	Convey("Having a Response Error", t, func() {
 		resErr := &ResponseError{
-			ErrorCategory: ErrorCategory{
-				Code:  "123",
-				Title: "The Title",
-			},
+			Code:   "123",
+			Title:  "The Title",
 			ID:     "1231",
 			Status: "400",
-			Detail: "Detailed info",
+			Detail: &Detail{Title: "Detailed info"},
 		}
 
 		Convey("While marshaling it to json", func() {
@@ -144,7 +123,7 @@ func TestMarshalingResponseError(t *testing.T) {
 
 					So(resErrJsonString, ShouldContainSubstring, "\"id\":\"1231\"")
 					So(resErrJsonString, ShouldContainSubstring, "\"status\":\"400\"")
-					So(resErrJsonString, ShouldContainSubstring, "\"detail\":\"Detailed info\"")
+					So(resErrJsonString, ShouldContainSubstring, "\"title\":\"Detailed info\"")
 
 				})
 		})
@@ -153,7 +132,7 @@ func TestMarshalingResponseError(t *testing.T) {
 
 func TestUmarshalingResponseError(t *testing.T) {
 	Convey("Having a json Response Error", t, func() {
-		jsonError := `{"id":"123","status":"404","detail":"Detailed info",
+		jsonError := `{"id":"123","status":"404","detail": {"title": "Detailed info", "info": ["Info info"]},
 		"code":"12","title":"The title","links":{"about":"someurl/to/error/12"}}`
 		Convey("The unmarshaling into 'ResponseError'", func() {
 			var resErr *ResponseError
@@ -167,7 +146,7 @@ func TestUmarshalingResponseError(t *testing.T) {
 				So(resErr.Links.About, ShouldEqual, "someurl/to/error/12")
 				So(resErr.ID, ShouldEqual, "123")
 				So(resErr.Status, ShouldEqual, "404")
-				So(resErr.Detail, ShouldEqual, "Detailed info")
+				So(resErr.Detail, ShouldResemble, &Detail{Title: "Detailed info", Info: []string{"Info info"}})
 			})
 		})
 	})
@@ -180,41 +159,6 @@ func TestUmarshalingResponseError(t *testing.T) {
 			Convey("It should produce unmarshal error", func() {
 				So(err, ShouldBeError)
 			})
-		})
-	})
-}
-
-func TestResponseErrorWithCategory(t *testing.T) {
-	incorrectIDCategory := ErrorCategory{
-		Code:  "2052y",
-		Title: "Incorrect ID in the query URL",
-	}
-	Convey("While an error occurred", t, func() {
-		var occuredErr = errors.New("Error that occurred")
-
-		Convey("And we categorize it as some category", func() {
-			category := incorrectIDCategory
-
-			Convey("By using the 'ResponseErrorWithCategory' we get 'ResponseError'", func() {
-				err := ResponseErrorWithCategory(occuredErr, category)
-
-				So(err, ShouldBeError)
-				So(err.Code, ShouldEqual, incorrectIDCategory.Code)
-				So(err.Title, ShouldEqual, incorrectIDCategory.Title)
-				So(err.Detail, ShouldEqual, occuredErr.Error())
-			})
-		})
-	})
-}
-
-func TestErrorCategoryStringer(t *testing.T) {
-	Convey("Having given ErrorCategory", t, func() {
-		category := &ErrorCategory{Code: "2xxxcode", Title: "Description of the problem"}
-
-		Convey("The String method should contain code and title", func() {
-			categoryString := category.String()
-			So(categoryString, ShouldContainSubstring, category.Code)
-			So(categoryString, ShouldContainSubstring, category.Title)
 		})
 	})
 }

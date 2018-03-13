@@ -18,26 +18,21 @@ type ErrorLink struct {
 	About string `json:"about"`
 }
 
-// ResponseErrorCategory is application specific error category
-type ErrorCategory struct {
+// Detail contains human readable detailed information about the specific problem
+// If more specific information is available, it may be stored in the 'Info' field.
+type Detail struct {
+	Title string   `json:"title,omitempty"`
+	Info  []string `json:"info,omitempty"`
+}
+
+// ResponseError represents full JSON-API error. It's easier to
+type ResponseError struct {
 	// Code is an application-specific code, expressed as code
 	Code string `json:"code,omitempty"`
 
 	// Title is a short human-readable summary of the problem. SHOULD NOT change from occurrence to
 	// occurrence of the problem
 	Title string `json:"title,omitempty"`
-}
-
-// String implements Stringer interface
-func (c *ErrorCategory) String() string {
-	return fmt.Sprintf("%s: %s", c.Code, c.Title)
-
-}
-
-// ResponseError represents full JSON-API error. It's easier to
-type ResponseError struct {
-	// ErrorCategory is inherited and contains error category variables
-	ErrorCategory
 
 	// ID is a unique identifier for this particular occurence of the problem
 	ID string `json:"id,omitempty"`
@@ -47,19 +42,11 @@ type ResponseError struct {
 
 	// Detail is a human-readable explanation of the problem that SHOULD describe specific
 	// occurrence of the problem.
-	Detail string `json:"detail,omitempty"`
+	Detail *Detail `json:"detail,omitempty"`
 
 	// Links contains the the link that leads to further details about this particular occurrence
 	// of the problem
 	Links *ErrorLink `json:"links,omitempty"`
-
-	// Err keeps the internal error message for logging purpose
-	err error
-}
-
-// ResponseErrorWithCategory prepares response error using 'category' argument.
-func ResponseErrorWithCategory(err error, category ErrorCategory) *ResponseError {
-	return &ResponseError{ErrorCategory: category, err: err}
 }
 
 // AddLink adds the link to the Error Category.
@@ -80,24 +67,14 @@ func (r *ResponseError) AddLink(urlBase string) error {
 	return nil
 }
 
-func (r *ResponseError) ExtendDetail(moreInfo string) {
-	if len(r.Detail) != 0 {
-		last := r.Detail[len(r.Detail)-1:]
-
-		if last == "." {
-			r.Detail += " " + moreInfo
-		} else if last == " " {
-			r.Detail += moreInfo
-		} else {
-			r.Detail += ". " + moreInfo
-		}
-	} else {
-		r.Detail = moreInfo
+func (r *ResponseError) AddDetailInfo(moreInfo string) {
+	if r.Detail == nil {
+		r.Detail = &Detail{}
 	}
-
+	r.Detail.Info = append(r.Detail.Info, moreInfo)
 }
 
 // Error implements error interface
 func (r *ResponseError) Error() string {
-	return fmt.Sprintf("%s-%s: %s", r.Code, r.ID, r.err.Error())
+	return fmt.Sprintf("%s-%s", r.Code, r.ID)
 }

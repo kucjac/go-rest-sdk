@@ -19,6 +19,7 @@ func TestPGRecogniser(t *testing.T) {
 				{Code: pq.ErrorCode("02000")}: dbe.ErrNoResult,
 				{Code: pq.ErrorCode("P0002")}: dbe.ErrNoResult,
 				{Code: pq.ErrorCode("08006")}: dbe.ErrConnExc,
+				{Code: pq.ErrorCode("21000")}: dbe.ErrCardinalityViolation,
 				{Code: pq.ErrorCode("22012")}: dbe.ErrDataException,
 				{Code: pq.ErrorCode("23000")}: dbe.ErrIntegrConstViolation,
 				{Code: pq.ErrorCode("23001")}: dbe.ErrRestrictViolation,

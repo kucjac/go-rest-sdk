@@ -17,6 +17,9 @@ var PGRecogniser PostgresErrorRecogniser = PostgresErrorRecogniser{
 	// Class 08 - Connection Exception
 	pq.ErrorClass("08"): dbe.ErrConnExc,
 
+	// Class 21 - Cardinality Violation
+	pq.ErrorClass("21"): dbe.ErrCardinalityViolation,
+
 	// Class 22 Data Exception
 	pq.ErrorClass("22"): dbe.ErrDataException,
 
