@@ -19,7 +19,7 @@ func (r SQLiteErrorRecogniser) Recognise(err error) error {
 		} else if err == sql.ErrTxDone {
 			return dbe.ErrTxDone
 		}
-		return err
+		return dbe.ErrUnspecifiedError
 	}
 
 	var dbError *dbe.DBError

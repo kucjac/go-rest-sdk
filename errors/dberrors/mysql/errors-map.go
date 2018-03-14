@@ -4,7 +4,7 @@ import (
 	dbe "github.com/kucjac/go-rest-sdk/errors/dberrors"
 )
 
-var MySQLRecogniser MySQLErrorRecogniser = MySQLErrorRecogniser{
+var MySQLRecogniser *MySQLErrorRecogniser = &MySQLErrorRecogniser{
 	codeMap:     mysqlErrMap,
 	sqlStateMap: codeSQLState,
 }

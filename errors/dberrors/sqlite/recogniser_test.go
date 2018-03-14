@@ -71,7 +71,7 @@ func TestSQLiteRecogniser(t *testing.T) {
 		Convey("Having an error of different type than *sqlite3.Error and sql.Err*", func() {
 			err := errors.New("Unknown error type")
 			recognisedErr := sqliteRecogniser.Recognise(err)
-			So(recognisedErr, ShouldEqual, err)
+			So(recognisedErr, ShouldEqual, dbe.ErrUnspecifiedError)
 		})
 	})
 }

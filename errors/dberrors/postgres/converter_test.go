@@ -62,7 +62,7 @@ func TestPGRecogniser(t *testing.T) {
 		Convey("Having unknown error not of *pq.Error type forwards it", func() {
 
 			fwdErr := errMap.Recognise(errors.New("Forwarded"))
-			So(fwdErr.Error(), ShouldEqual, "Forwarded")
+			So(fwdErr.Error(), ShouldEqual, dbe.ErrUnspecifiedError)
 
 		})
 	})

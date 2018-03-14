@@ -22,7 +22,7 @@ func (m *MySQLErrorRecogniser) Recognise(err error) error {
 		// Otherwise check if it sql.Err* or other errors from mysql package
 		switch err {
 		case msql.ErrInvalidConn, msql.ErrNoTLS, msql.ErrOldProtocol,
-			msql.ErrMalformPkt, sql.ErrConnDone:
+			msql.ErrMalformPkt:
 			dbErr = dbe.ErrConnExc
 			dbErr.Message += " " + err.Error()
 			return dbErr

@@ -3,12 +3,14 @@ package mgorepo
 import (
 	"github.com/jinzhu/inflection"
 	"github.com/kucjac/go-rest-sdk"
+	"github.com/kucjac/go-rest-sdk/errors/dberrors"
 	"gopkg.in/mgo.v2"
 )
 
 type MGORepository struct {
-	db     *mgo.Session
-	dbname string
+	db         *mgo.Session
+	dbname     string
+	recogniser dberrors.DBErrorRecogniser
 }
 
 func (m *MGORepository) Create(req interface{}) (err error) {

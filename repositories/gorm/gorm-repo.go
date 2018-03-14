@@ -1,4 +1,4 @@
-package gormrepo
+package gorm
 
 import (
 	"errors"
@@ -12,8 +12,8 @@ import (
 )
 
 type GORMRepository struct {
-	db  *gorm.DB
-	rcg dberrors.DBErrorRecogniser
+	db         *gorm.DB
+	recogniser dberrors.DBErrorRecogniser
 }
 
 // Initialize the gorm repository
@@ -24,27 +24,29 @@ func (g *GORMRepository) Init(db interface{}) (err error) {
 	}
 	conn, ok := db.(*gorm.DB)
 	if !ok {
-		err = errors.New(fmt.Sprintf("Incorrect type of the argument: %v", reflect.TypeOf(db)))
+		err = errors.New(fmt.Sprintf("Incorrect argument type: %v", reflect.TypeOf(db)))
 		return
 	}
 	g.db = conn
 
-	dialect := g.db.Dialect().GetName()
-
+	err = g.selectRecogniser()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 func (g *GORMRepository) Create(req interface{}) (err error) {
 	if err = g.db.Create(&req).Error; err != nil {
-		return err
+		return g.recogniser.Recognise(err)
 	}
 	return nil
 }
 
 func (g *GORMRepository) Get(req interface{}) (res interface{}, err error) {
 	res = restsdk.ObjOfPtrType(req)
-
 	if err = g.db.First(&res, req).Error; err != nil {
+		err = g.recogniser.Recognise(err)
 		return nil, err
 	}
 	return res, nil
@@ -58,6 +60,7 @@ func (g *GORMRepository) List(
 
 	// List objects provided with arguments probided in request
 	if err = g.db.Find(&res, req).Error; err != nil {
+		err = g.recogniser.Recognise(err)
 		return nil, err
 	}
 
@@ -77,6 +80,7 @@ func (g *GORMRepository) ListWithParams(
 		Find(&res, req).
 		Error
 	if err != nil {
+		err = g.recogniser.Recognise(err)
 		return nil, err
 	}
 	return res, nil
@@ -85,6 +89,7 @@ func (g *GORMRepository) ListWithParams(
 func (g *GORMRepository) Update(req interface{}) (err error) {
 	err = g.db.Save(req).Error
 	if err != nil {
+		err = g.recogniser.Recognise(err)
 		return err
 	}
 	return nil
@@ -93,6 +98,7 @@ func (g *GORMRepository) Update(req interface{}) (err error) {
 func (g *GORMRepository) Patch(req interface{}) (err error) {
 	err = g.db.Update(&req).Error
 	if err != nil {
+		err = g.recogniser.Recognise(err)
 		return err
 	}
 	return nil
@@ -101,22 +107,14 @@ func (g *GORMRepository) Patch(req interface{}) (err error) {
 func (g *GORMRepository) Delete(req interface{}) (err error) {
 	err = g.db.Delete(&req).Error
 	if err != nil {
+		err = g.recogniser.Recognise(err)
 		return err
 	}
 	return nil
 }
 
 func (g *GORMRepository) selectRecogniser() (err error) {
-	dialect := g.db.Dialect().GetName()
 
-	switch dialect {
-	case "postgres":
-		g.rcg = postgres.PGRecogniser
-	case "mysql":
-	case "sqlite3":
-		g.rcg = sqlite.SQLiteRecogniser
-	default:
-		return errors.New("Unknown dialect")
-	}
+	return nil
 
 }
