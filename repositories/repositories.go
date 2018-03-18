@@ -1,4 +1,4 @@
-package restsdk
+package repositories
 
 // List Parameters contains fields common for queries
 type ListParameters struct {

@@ -5,7 +5,7 @@ import (
 	"github.com/lib/pq"
 )
 
-var PGRecogniser PostgresErrorRecogniser = PostgresErrorRecogniser{
+var defaultPGErrorMap = map[interface{}]dbe.DBError{
 
 	// Class 01 - Warnings
 	pq.ErrorClass("01"): dbe.ErrWarning,

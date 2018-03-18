@@ -9,11 +9,21 @@ import (
 	"testing"
 )
 
+func TestNewConverter(t *testing.T) {
+	Convey("While using New function the converter is already inited.", t, func() {
+		var converter *PGConverter
+		converter = New()
+		So(converter, ShouldNotBeNil)
+		So(len(converter.errorMap), ShouldBeGreaterThan, 0)
+	})
+}
+
 func TestPGRecogniser(t *testing.T) {
-	Convey("Using Postgress Error Map", t, func() {
-		errMap := PGRecogniser
+	Convey("Using Postgress Converter", t, func() {
+		var converter *PGConverter = New()
+
 		Convey("Having a list of typical postgres errors", func() {
-			postgresErrors := map[*pq.Error]*dbe.DBError{
+			postgresErrors := map[*pq.Error]dbe.DBError{
 				{Code: pq.ErrorCode("01000")}: dbe.ErrWarning,
 				{Code: pq.ErrorCode("01007")}: dbe.ErrWarning,
 				{Code: pq.ErrorCode("02000")}: dbe.ErrNoResult,
@@ -45,24 +55,24 @@ func TestPGRecogniser(t *testing.T) {
 
 			Convey("For given postgres error, specific database error should return", func() {
 				for pgErr, dbErr := range postgresErrors {
-					recognisedErr := errMap.Recognise(pgErr)
-					So(recognisedErr, ShouldEqual, dbErr)
+					convertedErr := converter.Convert(pgErr)
+					So(convertedErr.Compare(dbErr), ShouldBeTrue)
 				}
 			})
 		})
 
 		Convey("When sql errors are returned, they are also converted into dberror", func() {
-			noResults := errMap.Recognise(sql.ErrNoRows)
-			So(noResults, ShouldEqual, dbe.ErrNoResult)
+			errNoResults := converter.Convert(sql.ErrNoRows)
+			So(errNoResults.Compare(dbe.ErrNoResult), ShouldBeTrue)
 
-			txDone := errMap.Recognise(sql.ErrTxDone)
-			So(txDone, ShouldEqual, dbe.ErrTxDone)
+			errTxDone := converter.Convert(sql.ErrTxDone)
+			So(errTxDone.Compare(dbe.ErrTxDone), ShouldBeTrue)
 		})
 
 		Convey("Having unknown error not of *pq.Error type forwards it", func() {
 
-			fwdErr := errMap.Recognise(errors.New("Forwarded"))
-			So(fwdErr.Error(), ShouldEqual, dbe.ErrUnspecifiedError)
+			fwdErr := converter.Convert(errors.New("Forwarded"))
+			So(fwdErr.Compare(dbe.ErrUnspecifiedError), ShouldBeTrue)
 
 		})
 	})

@@ -12,7 +12,7 @@ var (
 	ErrUnknownType        = errors.New("Unknown type of the field")
 )
 
-// ResponseErrorLink is an object that contains
+// RestErrorLink is an object that contains
 // link that leads to further details about this particular occurrence of the problem.
 type ErrorLink struct {
 	About string `json:"about"`
@@ -25,8 +25,30 @@ type Detail struct {
 	Info  []string `json:"info,omitempty"`
 }
 
-// ResponseError represents full JSON-API error. It's easier to
-type ResponseError struct {
+// Copy creates a copy of the Detail entity
+func (d *Detail) Copy() *Detail {
+	return d.copy()
+}
+
+func (d *Detail) copy() *Detail {
+	var detail *Detail
+	detail = &Detail{Title: d.Title}
+	detail.Info = append(detail.Info, d.Info...)
+	return detail
+}
+
+// RestError represents full JSON-API error. It's easier to
+type RestError struct {
+	// ID is a unique identifier for this particular occurence of the problem
+	ID string `json:"id,omitempty"`
+
+	// Links contains the the link that leads to further details about this particular occurrence
+	// of the problem
+	Links *ErrorLink `json:"links,omitempty"`
+
+	// Status is the HTTP status code applicable to this problem, expressed as a string value.
+	Status string `json:"status,omitempty"`
+
 	// Code is an application-specific code, expressed as code
 	Code string `json:"code,omitempty"`
 
@@ -34,19 +56,14 @@ type ResponseError struct {
 	// occurrence of the problem
 	Title string `json:"title,omitempty"`
 
-	// ID is a unique identifier for this particular occurence of the problem
-	ID string `json:"id,omitempty"`
-
-	// Status is the HTTP status code applicable to this problem, expressed as a string value.
-	Status string `json:"status,omitempty"`
-
 	// Detail is a human-readable explanation of the problem that SHOULD describe specific
 	// occurrence of the problem.
 	Detail *Detail `json:"detail,omitempty"`
+}
 
-	// Links contains the the link that leads to further details about this particular occurrence
-	// of the problem
-	Links *ErrorLink `json:"links,omitempty"`
+// New creates new *RestError entity that is a copy of given RestError prototype.
+func (r RestError) New() *RestError {
+	return &RestError{Code: r.Code, Title: r.Title, Status: r.Status, Detail: r.Detail.copy()}
 }
 
 // AddLink adds the link to the Error Category.
@@ -54,7 +71,7 @@ type ResponseError struct {
 // - urlBase - string representing the url link to the error category
 // The method checks if the urlBase is a correct url and then
 // appends the error category code to the urlBase
-func (r *ResponseError) AddLink(urlBase string) error {
+func (r *RestError) AddLink(urlBase string) error {
 	// if the url ends with '/', trim it
 	if last := len(urlBase) - 1; last >= 0 && urlBase[last] == '/' {
 		urlBase = urlBase[:last]
@@ -67,14 +84,25 @@ func (r *ResponseError) AddLink(urlBase string) error {
 	return nil
 }
 
-func (r *ResponseError) AddDetailInfo(moreInfo string) {
+// AddDetailInfo appends the provided 'infos' argument to the given RestError's Detail field.
+// If the Detail field is nil the new Detail entity would be created.
+func (r *RestError) AddDetailInfo(infos ...string) {
 	if r.Detail == nil {
 		r.Detail = &Detail{}
 	}
-	r.Detail.Info = append(r.Detail.Info, moreInfo)
+	r.Detail.Info = append(r.Detail.Info, infos...)
+}
+
+// Compare compares the given RestError entity with an RestError prototype 'err'
+// If both error and prototype has the same code the method returns 'true'.
+func (r *RestError) Compare(err RestError) bool {
+	if r.Code != err.Code {
+		return false
+	}
+	return true
 }
 
 // Error implements error interface
-func (r *ResponseError) Error() string {
+func (r *RestError) Error() string {
 	return fmt.Sprintf("%s-%s", r.Code, r.ID)
 }

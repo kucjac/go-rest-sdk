@@ -4,19 +4,13 @@ import (
 	dbe "github.com/kucjac/go-rest-sdk/errors/dberrors"
 )
 
-var MySQLRecogniser *MySQLErrorRecogniser = &MySQLErrorRecogniser{
-	codeMap:     mysqlErrMap,
-	sqlStateMap: codeSQLState,
-}
-
-var mysqlErrMap = map[interface{}]*dbe.DBError{
+var mysqlErrMap = map[interface{}]dbe.DBError{
 	"08": dbe.ErrConnExc,
 	"22": dbe.ErrDataException,
 	"25": dbe.ErrInvalidTransState,
 	"42": dbe.ErrInvalidSyntax,
 	"XA": dbe.ErrInvalidTransState,
 
-	"01000": nil,
 	"08S01": dbe.ErrConnExc,
 	"08001": dbe.ErrConnExc,
 	"21000": dbe.ErrCardinalityViolation,

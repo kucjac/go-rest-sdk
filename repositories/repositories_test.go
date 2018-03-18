@@ -1,4 +1,4 @@
-package restsdk
+package repositories
 
 import (
 	. "github.com/smartystreets/goconvey/convey"

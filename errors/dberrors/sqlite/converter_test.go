@@ -9,14 +9,29 @@ import (
 	"testing"
 )
 
-func TestSQLiteRecogniser(t *testing.T) {
-	Convey("Using a SQLite3 Error Recogniser", t, func() {
+func TestNewConverter(t *testing.T) {
+	Convey("Using New function creates non-empty SQLiteConverter.", t, func() {
+		var converter *SQLiteConverter
+		converter = New()
 
-		sqliteRecogniser := SQLiteRecogniser
+		So(converter, ShouldNotBeNil)
+
+		So(len(converter.errorMap), ShouldBeGreaterThan, 0)
+
+		Convey("The SQLiteConverter implements DBErrorConverter", func() {
+			So(converter, ShouldImplement, (*dbe.DBErrorConverter)(nil))
+		})
+	})
+}
+
+func TestSQLiteRecogniser(t *testing.T) {
+	Convey("Using a SQLite3 Error Converter", t, func() {
+
+		var converter *SQLiteConverter = New()
 
 		Convey("Having a list of sqlite errors", func() {
 
-			sqliteErrors := map[*sqlite3.Error]*dbe.DBError{
+			sqliteErrors := map[*sqlite3.Error]dbe.DBError{
 				{Code: sqlite3.ErrWarning}:  dbe.ErrWarning,
 				{Code: sqlite3.ErrNotFound}: dbe.ErrNoResult,
 				{Code: sqlite3.ErrCantOpen}: dbe.ErrConnExc,
@@ -48,30 +63,27 @@ func TestSQLiteRecogniser(t *testing.T) {
 
 			Convey("For given *sqlite.Error, specific database error should be returner.", func() {
 				for sqliteErr, dbErr := range sqliteErrors {
-					recognisedErr := sqliteRecogniser.Recognise(sqliteErr)
-					So(recognisedErr, ShouldEqual, dbErr)
+					recognisedErr := converter.Convert(sqliteErr)
+					So(recognisedErr.Compare(dbErr), ShouldBeTrue)
 				}
 			})
 		})
 
-		Convey("Having an error of type sql.Err*, error is converted into *DBError type.",
-			func() {
-				var err error
-				Println("No rows")
-				err = sql.ErrNoRows
-				recognisedErr := sqliteRecogniser.Recognise(err)
-				So(recognisedErr, ShouldEqual, dbe.ErrNoResult)
+		Convey("Having an error of type sql.Err*, error is converted into *DBError type.", func() {
+			var err error
+			err = sql.ErrNoRows
+			recognisedErr := converter.Convert(err)
+			So(recognisedErr.Compare(dbe.ErrNoResult), ShouldBeTrue)
 
-				Println("Tx done")
-				err = sql.ErrTxDone
-				recognisedErr = sqliteRecogniser.Recognise(err)
-				So(recognisedErr, ShouldEqual, dbe.ErrTxDone)
-			})
+			err = sql.ErrTxDone
+			recognisedErr = converter.Convert(err)
+			So(recognisedErr.Compare(dbe.ErrTxDone), ShouldBeTrue)
+		})
 
 		Convey("Having an error of different type than *sqlite3.Error and sql.Err*", func() {
 			err := errors.New("Unknown error type")
-			recognisedErr := sqliteRecogniser.Recognise(err)
-			So(recognisedErr, ShouldEqual, dbe.ErrUnspecifiedError)
+			recognisedErr := converter.Convert(err)
+			So(recognisedErr.Compare(dbe.ErrUnspecifiedError), ShouldBeTrue)
 		})
 	})
 }

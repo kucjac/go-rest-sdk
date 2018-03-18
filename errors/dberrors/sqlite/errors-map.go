@@ -5,7 +5,7 @@ import (
 	"github.com/mattn/go-sqlite3"
 )
 
-var SQLiteRecogniser SQLiteErrorRecogniser = SQLiteErrorRecogniser{
+var defaultSQLiteErrorMap map[interface{}]dbe.DBError = map[interface{}]dbe.DBError{
 	sqlite3.ErrWarning: dbe.ErrWarning,
 
 	sqlite3.ErrNotFound: dbe.ErrNoResult,

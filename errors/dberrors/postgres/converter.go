@@ -7,7 +7,9 @@ import (
 )
 
 // PostgresErrorConverter is an implementation of DBErrorConverter.
-type PostgresErrorConverter map[interface{}]*dbe.DBError
+type PGConverter struct {
+	errorMap map[interface{}]dbe.DBError
+}
 
 // Convert converts the given error into *DBError.
 // The method checks if given error is of known type, and then returns it.ty
@@ -16,42 +18,41 @@ type PostgresErrorConverter map[interface{}]*dbe.DBError
 // Having a postgres *pq.Error it checks if an ErrorCode is in the map,
 // and returns it if true. Otherwise method checks if the ErrorClass exists in map.
 // If it is present, new *DBError of given type is returned.
-func (p PostgresErrorConverter) Convert(err error) (dbeErr *dbe.DBError) {
+func (p *PGConverter) Convert(err error) (dbeErr *dbe.DBError) {
 	pgError, ok := err.(*pq.Error)
 	if !ok {
 		// The error may be of sql.ErrNoRows type
 		if err == sql.ErrNoRows {
-			dbeErr = dbe.ErrNoResult.New()
-			dbeErr.Message = err.Error()
-			return
+			return dbe.ErrNoResult.NewWithError(err)
 		} else if err == sql.ErrTxDone {
-			dbeErr = dbe.ErrTxDone.New()
-			dbeErr.Message = err.Error()
-			return
+			return dbe.ErrTxDone.NewWithError(err)
 		}
-		dbeErr = dbe.ErrUnspecifiedError.New()
-		dbeErr.Error()
-		return
+		return dbe.ErrUnspecifiedError.NewWithError(err)
+
 	}
 
-	var (
-		dbError      *dbe.DBError
-		dbErrorProto dbe.DBError
-	)
+	// DBError prototype
+	var dbErrorProto dbe.DBError
 
 	// First check if recogniser has entire error code in it
-	dbErrorProto, ok = p[pgError.Code]
+	dbErrorProto, ok = p.errorMap[pgError.Code]
 	if ok {
-
-		return dbErrorProto.NewWithMessage(pgError.Error())
+		return dbErrorProto.NewWithError(err)
 	}
+
 	// If the ErrorCode is not present, check the code class
-	dbError, ok = p[pgError.Code.Class()]
+	dbErrorProto, ok = p.errorMap[pgError.Code.Class()]
 	if ok {
-		return dbError
+		return dbErrorProto.NewWithError(err)
 	}
 
 	// If the Error Class is not presen in the error map
 	// return ErrDBNotMapped
-	return dbe.ErrUnspecifiedError
+	return dbe.ErrUnspecifiedError.NewWithError(err)
+}
+
+// New creates new PGConverter
+// It is already inited and ready to use.
+func New() *PGConverter {
+	return &PGConverter{errorMap: defaultPGErrorMap}
 }

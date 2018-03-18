@@ -1,4 +1,4 @@
-package restsdk
+package response
 
 import (
 	"errors"

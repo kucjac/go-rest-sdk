@@ -4,16 +4,16 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jinzhu/gorm"
-	"github.com/kucjac/go-rest-sdk"
 	"github.com/kucjac/go-rest-sdk/errors/dberrors"
 	"github.com/kucjac/go-rest-sdk/errors/dberrors/postgres"
 	"github.com/kucjac/go-rest-sdk/errors/dberrors/sqlite"
+	"github.com/kucjac/go-rest-sdk/repositories"
 	"reflect"
 )
 
 type GORMRepository struct {
-	db         *gorm.DB
-	recogniser dberrors.DBErrorRecogniser
+	db        *gorm.DB
+	converter dberrors.DBErrorConverter
 }
 
 // Initialize the gorm repository
@@ -29,7 +29,13 @@ func (g *GORMRepository) Init(db interface{}) (err error) {
 	}
 	g.db = conn
 
-	err = g.selectRecogniser()
+	// Initialize GORM Error Converter
+	gormConverter := new(GORMErrorConverter)
+	gormConverter.Init(db)
+
+	// Assign GORM Error Converter as a repository converter
+	g.converter = gormConverter
+
 	if err != nil {
 		return err
 	}
@@ -38,7 +44,7 @@ func (g *GORMRepository) Init(db interface{}) (err error) {
 
 func (g *GORMRepository) Create(req interface{}) (err error) {
 	if err = g.db.Create(&req).Error; err != nil {
-		return g.recogniser.Recognise(err)
+		return g.converter.Convert(err)
 	}
 	return nil
 }
@@ -46,7 +52,7 @@ func (g *GORMRepository) Create(req interface{}) (err error) {
 func (g *GORMRepository) Get(req interface{}) (res interface{}, err error) {
 	res = restsdk.ObjOfPtrType(req)
 	if err = g.db.First(&res, req).Error; err != nil {
-		err = g.recogniser.Recognise(err)
+		err = g.converter.Convert(err)
 		return nil, err
 	}
 	return res, nil
@@ -60,10 +66,9 @@ func (g *GORMRepository) List(
 
 	// List objects provided with arguments probided in request
 	if err = g.db.Find(&res, req).Error; err != nil {
-		err = g.recogniser.Recognise(err)
+		err = g.converter.Convert(err)
 		return nil, err
 	}
-
 	return res, nil
 }
 
@@ -80,7 +85,7 @@ func (g *GORMRepository) ListWithParams(
 		Find(&res, req).
 		Error
 	if err != nil {
-		err = g.recogniser.Recognise(err)
+		err = g.converter.Convert(err)
 		return nil, err
 	}
 	return res, nil
@@ -89,7 +94,7 @@ func (g *GORMRepository) ListWithParams(
 func (g *GORMRepository) Update(req interface{}) (err error) {
 	err = g.db.Save(req).Error
 	if err != nil {
-		err = g.recogniser.Recognise(err)
+		err = g.converter.Convert(err)
 		return err
 	}
 	return nil
@@ -98,7 +103,7 @@ func (g *GORMRepository) Update(req interface{}) (err error) {
 func (g *GORMRepository) Patch(req interface{}) (err error) {
 	err = g.db.Update(&req).Error
 	if err != nil {
-		err = g.recogniser.Recognise(err)
+		err = g.converter.Convert(err)
 		return err
 	}
 	return nil
@@ -107,14 +112,7 @@ func (g *GORMRepository) Patch(req interface{}) (err error) {
 func (g *GORMRepository) Delete(req interface{}) (err error) {
 	err = g.db.Delete(&req).Error
 	if err != nil {
-		err = g.recogniser.Recognise(err)
-		return err
+		return g.converter.Convert(err)
 	}
 	return nil
-}
-
-func (g *GORMRepository) selectRecogniser() (err error) {
-
-	return nil
-
 }

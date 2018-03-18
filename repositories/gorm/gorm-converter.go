@@ -8,37 +8,37 @@ import (
 	"github.com/kucjac/go-rest-sdk/errors/dberrors/sqlite"
 )
 
-type GORMErrorRecogniser struct {
-	dbRecogniser dberrors.DBErrorRecogniser
+type GORMErrorConverter struct {
+	converter dberrors.DBErrorConverter
 }
 
-func (g *GORMErrorRecogniser) Init(db *gorm.DB) error {
+func (g *GORMErrorConverter) Init(db *gorm.DB) error {
 	dialect := g.db.Dialect()
 	switch dialect.GetName() {
 	case "postgres":
-		g.dbRecogniser = postgres.PGRecogniser
+		g.converter = postgres.New()
 	case "mysql":
-		g.dbRecogniser = mysql.MySQLRecogniser
+		g.converter = mysql.New()
 	case "sqlite3":
-		g.dbRecogniser = sqlite.SQLiteRecogniser
+		g.converter = sqlite.New()
 	default:
 		return errors.New("Unsupported database dialect.")
 	}
 	return nil
 }
 
-func (g *GORMErrorRecogniser) Recognise(err error) error {
+func (g *GORMErrorConverter) Convert(err error) *dberrors.DBError {
 	switch err {
 	case gorm.ErrCantStartTransaction, gorm.ErrInvalidTransaction:
-		return dberrors.ErrInvalidTransState
+		return dberrors.ErrInvalidTransState.NewWithError(err)
 	case gorm.ErrInvalidSQL:
-		return dberrors.ErrInvalidSyntax
+		return dberrors.ErrInvalidSyntax.NewWithError(err)
 	case gorm.ErrUnaddressable:
-		return err
+		return dberrors.ErrUnspecifiedError.NewWithError(err)
 	case gorm.ErrRecordNotFound:
-		return dberrors.ErrNoResult
+		return dberrors.ErrNoResult.NewWithError(err)
 	}
 	// If error is not of gorm type
 	// use db recogniser
-	return g.dbRecogniser.Recognise(err)
+	return g.converter.Convert(err)
 }

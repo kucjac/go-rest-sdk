@@ -8,12 +8,28 @@ import (
 	"testing"
 )
 
+func TestNew(t *testing.T) {
+	Convey("The 'New()' function creates new already inited '*MySQLConverter' entity", t, func() {
+		var converter *MySQLConverter
+		converter = New()
+
+		So(converter, ShouldNotBeNil)
+
+		So(len(converter.codeMap), ShouldBeGreaterThan, 0)
+		So(len(converter.sqlStateMap), ShouldBeGreaterThan, 0)
+
+		Convey("The *MySQLConverter implements dberrors.DBErrorConverter interface", func() {
+			So(converter, ShouldImplement, (*dbe.DBErrorConverter)(nil))
+		})
+	})
+}
+
 func TestMySQLRecogniser(t *testing.T) {
-	Convey("Having a MySQL Error Recogniser.", t, func() {
-		rcg := MySQLRecogniser
+	Convey("Having MySQLConverter.", t, func() {
+		var converter *MySQLConverter = New()
 
 		Convey("Check if selected MySQL Errors would return for given dberrors DBError", func() {
-			errorMap := map[*mysql.MySQLError]*dbe.DBError{
+			errorMap := map[*mysql.MySQLError]dbe.DBError{
 				{Number: 1022}: dbe.ErrUniqueViolation,
 				{Number: 1046}: dbe.ErrInvalidCatalogName,
 				{Number: 1048}: dbe.ErrNotNullViolation,
@@ -21,6 +37,7 @@ func TestMySQLRecogniser(t *testing.T) {
 				{Number: 1062}: dbe.ErrUniqueViolation,
 				{Number: 1114}: dbe.ErrProgramLimitExceeded,
 				{Number: 1118}: dbe.ErrProgramLimitExceeded,
+				{Number: 1129}: dbe.ErrInternalError,
 				{Number: 1130}: dbe.ErrInvalidAuthorization,
 				{Number: 1131}: dbe.ErrInvalidAuthorization,
 				{Number: 1132}: dbe.ErrInvalidPassword,
@@ -39,7 +56,6 @@ func TestMySQLRecogniser(t *testing.T) {
 				{Number: 1568}: dbe.ErrUniqueViolation,
 				{Number: 1698}: dbe.ErrInvalidPassword,
 				//Nil
-				{Number: 1261}: nil,
 				{Number: 1317}: dbe.ErrUnspecifiedError,
 				{Number: 1040}: dbe.ErrConnExc,
 				//Non mapped number
@@ -47,16 +63,15 @@ func TestMySQLRecogniser(t *testing.T) {
 			}
 
 			for msqlErr, dbErr := range errorMap {
-				dbErrInMap := rcg.Recognise(msqlErr)
-				// Printf("%v: %v\n", msqlErr, dbErrInMap)
-				So(dbErr, ShouldEqual, dbErrInMap)
+				dbErrInMap := converter.Convert(msqlErr)
+
+				So(dbErrInMap.Compare(dbErr), ShouldBeTrue)
 			}
 		})
 		Convey("Having error of different type than *mysql.Error", func() {
-			errorMap := map[error]*dbe.DBError{
+			errorMap := map[error]dbe.DBError{
 				sql.ErrNoRows:           dbe.ErrNoResult,
 				sql.ErrTxDone:           dbe.ErrTxDone,
-				sql.ErrConnDone:         dbe.ErrConnExc,
 				mysql.ErrInvalidConn:    dbe.ErrConnExc,
 				mysql.ErrNoTLS:          dbe.ErrConnExc,
 				mysql.ErrMalformPkt:     dbe.ErrConnExc,
@@ -65,9 +80,9 @@ func TestMySQLRecogniser(t *testing.T) {
 			}
 
 			for err, dbErr := range errorMap {
-				dbErrInMap := rcg.Recognise(err)
+				dbErrInMap := converter.Convert(err)
 				// Printf("%v: %v\n", err, dbErrInMap)
-				So(dbErrInMap, ShouldEqual, dbErr)
+				So(dbErrInMap.Compare(dbErr), ShouldBeTrue)
 			}
 		})
 	})

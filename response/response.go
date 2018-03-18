@@ -1,3 +1,5 @@
+package response
+
 package restsdk
 
 // APIResponse - basic REST API response structure

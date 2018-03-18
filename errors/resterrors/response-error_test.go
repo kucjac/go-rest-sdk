@@ -7,9 +7,22 @@ import (
 	"testing"
 )
 
-func TestResponseErrorAddLink(t *testing.T) {
+func TestCopyDetail(t *testing.T) {
+	Convey("Having a detail with some title and info", t, func() {
+		detail := &Detail{Title: "Some title", Info: []string{"some info1", "some info2"}}
+
+		Convey("Using the copy method creates new copy of the detail entity", func() {
+			copiedDetail := detail.Copy()
+
+			So(detail, ShouldResemble, copiedDetail)
+		})
+
+	})
+}
+
+func TestRestErrorAddLink(t *testing.T) {
 	Convey("Given a Response Error.", t, func() {
-		var testError ResponseError = ResponseError{
+		var testError RestError = RestError{
 			ID:     "806x",
 			Detail: &Detail{Title: "Test Detail"},
 		}
@@ -57,21 +70,22 @@ func TestResponseErrorAddLink(t *testing.T) {
 	})
 }
 
-func TestResponseErrorExtendDetail(t *testing.T) {
+func TestRestErrorAddDetails(t *testing.T) {
 	Convey("Having a response error with initial detail", t, func() {
-		err := &ResponseError{Detail: &Detail{Title: "Detail"}}
+		err := &RestError{Detail: &Detail{Title: "Detail"}}
 
 		Convey("With usage of AddDetialInfo method the Detail would be extended by argument", func() {
 			var info string = "Added info."
-			err.AddDetailInfo(info)
+			var info2 string = "Info2"
+			err.AddDetailInfo(info, info2)
 
 			So(err.Detail.Title, ShouldEqual, "Detail")
 			So(err.Detail.Info, ShouldContain, info)
 			So(err.Detail.Title, ShouldNotEqual, "DetailExtend")
-			So(err.Detail, ShouldResemble, &Detail{Title: "Detail", Info: []string{info}})
+			So(err.Detail, ShouldResemble, &Detail{Title: "Detail", Info: []string{info, info2}})
 		})
 
-		errWithEmptyDetail := &ResponseError{}
+		errWithEmptyDetail := &RestError{}
 
 		Convey("When the detail is empty, extending it just adds the value", func() {
 			So(errWithEmptyDetail.Detail, ShouldBeNil)
@@ -85,9 +99,9 @@ func TestResponseErrorExtendDetail(t *testing.T) {
 
 }
 
-func TestResponseErrorErrorMethod(t *testing.T) {
-	Convey("Having a ResponseError", t, func() {
-		rerr := &ResponseError{
+func TestRestErrorErrorMethod(t *testing.T) {
+	Convey("Having a RestError", t, func() {
+		rerr := &RestError{
 			Code: "CODE8132",
 			ID:   "ID123",
 		}
@@ -99,9 +113,37 @@ func TestResponseErrorErrorMethod(t *testing.T) {
 	})
 }
 
-func TestMarshalingResponseError(t *testing.T) {
+func TestNewRestError(t *testing.T) {
+	Convey("Having an error prototype", t, func() {
+		errProto := RestError{
+			Title:  "Proto title",
+			Code:   "Proto1",
+			Status: "400",
+			Detail: &Detail{Title: "Title", Info: []string{"Some info"}},
+		}
+
+		Convey(`A new method creates RestError entity 
+			that is the copy of the prototype`, func() {
+			errEntity := errProto.New()
+
+			So(errEntity.Title, ShouldEqual, errProto.Title)
+			So(errEntity.Code, ShouldEqual, errProto.Code)
+			So(errEntity.Status, ShouldEqual, errProto.Status)
+			So(errEntity.Detail, ShouldNotBeNil)
+
+			Convey("While the detail should be just a copy of the proto detail", func() {
+				So(errEntity.Detail, ShouldNotEqual, errProto.Detail)
+				So(errEntity.Detail.Title, ShouldEqual, errProto.Detail.Title)
+				So(errEntity.Detail.Info, ShouldResemble, errProto.Detail.Info)
+				So(errEntity.Detail.Info, ShouldNotEqual, errProto.Detail.Info)
+			})
+		})
+	})
+}
+
+func TestMarshalingRestError(t *testing.T) {
 	Convey("Having a Response Error", t, func() {
-		resErr := &ResponseError{
+		resErr := &RestError{
 			Code:   "123",
 			Title:  "The Title",
 			ID:     "1231",
@@ -130,12 +172,12 @@ func TestMarshalingResponseError(t *testing.T) {
 	})
 }
 
-func TestUmarshalingResponseError(t *testing.T) {
+func TestUmarshalingRestError(t *testing.T) {
 	Convey("Having a json Response Error", t, func() {
 		jsonError := `{"id":"123","status":"404","detail": {"title": "Detailed info", "info": ["Info info"]},
 		"code":"12","title":"The title","links":{"about":"someurl/to/error/12"}}`
-		Convey("The unmarshaling into 'ResponseError'", func() {
-			var resErr *ResponseError
+		Convey("The unmarshaling into 'RestError'", func() {
+			var resErr *RestError
 			err := json.Unmarshal([]byte(jsonError), &resErr)
 			So(err, ShouldBeNil)
 
@@ -151,14 +193,45 @@ func TestUmarshalingResponseError(t *testing.T) {
 		})
 	})
 
-	Convey("Having a json ResponseError with incorrect types", t, func() {
+	Convey("Having a json RestError with incorrect types", t, func() {
 		jsonError := `{"id":123, "status":"403"}`
-		Convey("Unmarshaling it into ResponseError", func() {
-			var resErr *ResponseError
+		Convey("Unmarshaling it into RestError", func() {
+			var resErr *RestError
 			err := json.Unmarshal([]byte(jsonError), &resErr)
 			Convey("It should produce unmarshal error", func() {
 				So(err, ShouldBeError)
 			})
+		})
+	})
+}
+
+func TestCompareRestError(t *testing.T) {
+	Convey(`Having a response error prototype and 
+		responseError entity of the same 'code'`, t, func() {
+		proto := RestError{ID: "123", Code: "523", Title: "Prototype to compare"}
+		entity := &RestError{Code: "523",
+			Title: "Title can be different, but it would rather be the same",
+			ID:    "ID is not compared",
+		}
+
+		Convey(`Comparing the 'entity' with the 'proto' 
+			that has the same 'Code' would return true`, func() {
+			boolValue := entity.Compare(proto)
+
+			So(boolValue, ShouldBeTrue)
+		})
+
+		Convey(`But if the RestError entity have different or doesn't contain code,
+			 the method would return false`, func() {
+			entityWithNoCode := &RestError{ID: "1234", Title: "The title"}
+			entityWithDifferentCode := &RestError{ID: "1234", Code: "625"}
+
+			boolValue := entityWithNoCode.Compare(proto)
+
+			So(boolValue, ShouldBeFalse)
+
+			boolValue = entityWithDifferentCode.Compare(proto)
+			So(boolValue, ShouldBeFalse)
 		})
 	})
 }
