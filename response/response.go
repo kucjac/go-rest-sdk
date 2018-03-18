@@ -1,7 +1,5 @@
 package response
 
-package restsdk
-
 // APIResponse - basic REST API response structure
 // Created on purpose of easily managable and
 type APIResponse struct {
