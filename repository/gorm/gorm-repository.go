@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"github.com/jinzhu/gorm"
 	"github.com/kucjac/go-rest-sdk/errors/dberrors"
-	"github.com/kucjac/go-rest-sdk/errors/dberrors/postgres"
-	"github.com/kucjac/go-rest-sdk/errors/dberrors/sqlite"
-	"github.com/kucjac/go-rest-sdk/repositories"
+	"github.com/kucjac/go-rest-sdk/forms"
+	"github.com/kucjac/go-rest-sdk/repository"
 	"reflect"
 )
 
@@ -31,7 +30,7 @@ func (g *GORMRepository) Init(db interface{}) (err error) {
 
 	// Initialize GORM Error Converter
 	gormConverter := new(GORMErrorConverter)
-	gormConverter.Init(db)
+	gormConverter.Init(conn)
 
 	// Assign GORM Error Converter as a repository converter
 	g.converter = gormConverter
@@ -50,7 +49,7 @@ func (g *GORMRepository) Create(req interface{}) (err error) {
 }
 
 func (g *GORMRepository) Get(req interface{}) (res interface{}, err error) {
-	res = restsdk.ObjOfPtrType(req)
+	res = forms.ObjOfPtrType(req)
 	if err = g.db.First(&res, req).Error; err != nil {
 		err = g.converter.Convert(err)
 		return nil, err
@@ -62,7 +61,7 @@ func (g *GORMRepository) List(
 	req interface{},
 ) (res interface{}, err error) {
 	// Get Slice of pointer type 'req'
-	res = restsdk.SliceOfPtrType(req)
+	res = forms.SliceOfPtrType(req)
 
 	// List objects provided with arguments probided in request
 	if err = g.db.Find(&res, req).Error; err != nil {
@@ -73,10 +72,10 @@ func (g *GORMRepository) List(
 }
 
 func (g *GORMRepository) ListWithParams(
-	req interface{}, params *restsdk.ListParameters,
+	req interface{}, params *repository.ListParameters,
 ) (res interface{}, err error) {
 	// Get Slice of pointer type 'req'
-	res = restsdk.SliceOfPtrType(req)
+	res = forms.SliceOfPtrType(req)
 
 	err = g.db.
 		Offset(params.Offset).

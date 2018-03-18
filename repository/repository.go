@@ -1,9 +1,9 @@
-package repositories
+package repository
 
 // List Parameters contains fields common for queries
 type ListParameters struct {
-	Limit  int
-	Offset int
+	Limit  int `form:"page_size"`
+	Offset int `form:"page"`
 	Order  string
 }
 

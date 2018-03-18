@@ -1,4 +1,4 @@
-package restsdk
+package forms
 
 import (
 	. "github.com/smartystreets/goconvey/convey"

@@ -1,9 +1,8 @@
-package restsdk
+package forms
 
 import (
 	"encoding/json"
 	"errors"
-	"github.com/smartystreets/goconvey/convey"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -183,7 +182,6 @@ func mapForm(ptr interface{}, form map[string][]string, policy *FormPolicy) erro
 			if sFieldKind == reflect.Struct {
 				// mapQuery recursively if the field is a struct
 				err := mapForm(sField.Addr().Interface(), form, policy)
-				convey.Println(tField.Name)
 				// check error only if the policy requirers it
 				if policy.FailOnError {
 					if err != nil {

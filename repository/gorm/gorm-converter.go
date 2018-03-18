@@ -1,6 +1,7 @@
 package gorm
 
 import (
+	"errors"
 	"github.com/jinzhu/gorm"
 	"github.com/kucjac/go-rest-sdk/errors/dberrors"
 	"github.com/kucjac/go-rest-sdk/errors/dberrors/mysql"
@@ -13,7 +14,7 @@ type GORMErrorConverter struct {
 }
 
 func (g *GORMErrorConverter) Init(db *gorm.DB) error {
-	dialect := g.db.Dialect()
+	dialect := db.Dialect()
 	switch dialect.GetName() {
 	case "postgres":
 		g.converter = postgres.New()

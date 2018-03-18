@@ -3,8 +3,8 @@ package ginhandler
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/jinzhu/inflection"
-	"github.com/kucjac/go-rest-sdk"
 	"github.com/kucjac/go-rest-sdk/errors"
+	"github.com/kucjac/go-rest-sdk/repositories"
 	"log"
 )
 
