@@ -25,6 +25,48 @@ func (m *IDSetterModel) SetID(id uint64) {
 	m.ID = id
 }
 
+func TestObjsOfTheSameType(t *testing.T) {
+	Convey("Subject: ObjsOfTheSameType compares the type of two structs", t, func() {
+		Convey("Having two records of the same type", func() {
+			a := Foo{}
+			b := Foo{}
+			Convey("The function should return true", func() {
+				value := ObjsOfTheSameType(a, b)
+				So(value, ShouldBeTrue)
+			})
+		})
+		Convey("Having one object of *Foo type and second of Foo type", func() {
+			a := &Foo{}
+			b := Foo{}
+
+			Convey("The function should return true", func() {
+				value := ObjsOfTheSameType(a, b)
+				So(value, ShouldBeTrue)
+			})
+		})
+
+		Convey("Having objects of different types", func() {
+			a := Foo{}
+			b := FooNess{}
+
+			Convey("The function should return false", func() {
+				value := ObjsOfTheSameType(a, b)
+				So(value, ShouldBeFalse)
+			})
+		})
+
+		Convey("Having objects of different ptr types", func() {
+			a := &Foo{}
+			b := &FooNess{}
+
+			Convey("The function should return false", func() {
+				value := ObjsOfTheSameType(a, b)
+				So(value, ShouldBeFalse)
+			})
+		})
+	})
+}
+
 func TestGetType(t *testing.T) {
 	Convey("Having an object of type *Foo", t, func() {
 		obj := &Foo{Bar: "bar"}

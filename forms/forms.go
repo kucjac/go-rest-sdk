@@ -33,6 +33,15 @@ type IDSetter interface {
 	SetID(id uint64)
 }
 
+func ObjsOfTheSameType(first interface{}, second interface{}) bool {
+	firstType := getType(first)
+	secondType := getType(second)
+	if firstType == secondType {
+		return true
+	}
+	return false
+}
+
 // ObjOfType returns the empty object of type given in request
 // For example if req is type Foo it returns empty object of type Foo
 // The function deeply checks type of the request so that even if it is

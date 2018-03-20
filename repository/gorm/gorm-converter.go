@@ -1,4 +1,4 @@
-package gorm
+package gormrepo
 
 import (
 	"errors"
@@ -14,6 +14,9 @@ type GORMErrorConverter struct {
 }
 
 func (g *GORMErrorConverter) Init(db *gorm.DB) error {
+	if db == nil {
+		return errors.New("Nil pointer provided")
+	}
 	dialect := db.Dialect()
 	switch dialect.GetName() {
 	case "postgres":

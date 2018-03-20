@@ -1,47 +1,65 @@
-package gorm
+package gormrepo
 
 import (
 	"errors"
-	"fmt"
 	"github.com/jinzhu/gorm"
 	"github.com/kucjac/go-rest-sdk/errors/dberrors"
 	"github.com/kucjac/go-rest-sdk/forms"
 	"github.com/kucjac/go-rest-sdk/repository"
-	"reflect"
 )
+
+type Foo struct {
+	ID    uint
+	Name  string
+	Bar   *Bar
+	BarID uint
+}
+
+type Bar struct {
+	ID   uint
+	Name string
+}
 
 type GORMRepository struct {
 	db        *gorm.DB
 	converter dberrors.DBErrorConverter
 }
 
-// Initialize the gorm repository
-func (g *GORMRepository) Init(db interface{}) (err error) {
+func New(db *gorm.DB) (*GORMRepository, error) {
+	gormRepo := &GORMRepository{}
+	err := gormRepo.init(db)
+	if err != nil {
+		return nil, err
+	}
+	return gormRepo, nil
+
+}
+
+func (g *GORMRepository) init(db *gorm.DB) (err error) {
 	if db == nil {
 		err = errors.New("Nil pointer as an argument provided.")
 		return
 	}
-	conn, ok := db.(*gorm.DB)
-	if !ok {
-		err = errors.New(fmt.Sprintf("Incorrect argument type: %v", reflect.TypeOf(db)))
-		return
-	}
-	g.db = conn
+	g.db = db
 
 	// Initialize GORM Error Converter
 	gormConverter := new(GORMErrorConverter)
-	gormConverter.Init(conn)
+
+	err = gormConverter.Init(db)
+	if err != nil {
+		return err
+	}
 
 	// Assign GORM Error Converter as a repository converter
 	g.converter = gormConverter
 
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
 func (g *GORMRepository) Create(req interface{}) (err error) {
+
+	g.db.Debug().Find(&req)
+
 	if err = g.db.Create(&req).Error; err != nil {
 		return g.converter.Convert(err)
 	}
@@ -99,8 +117,9 @@ func (g *GORMRepository) Update(req interface{}) (err error) {
 	return nil
 }
 
-func (g *GORMRepository) Patch(req interface{}) (err error) {
-	err = g.db.Update(&req).Error
+func (g *GORMRepository) Patch(what interface{}, where interface{}) (err error) {
+
+	err = g.db.Update(&what).Select(&where).Error
 	if err != nil {
 		err = g.converter.Convert(err)
 		return err

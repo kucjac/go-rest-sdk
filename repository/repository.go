@@ -30,12 +30,10 @@ type GenericRepository interface {
 	// Update replaces the whole object with given in argument
 	Update(req interface{}) (err error)
 
-	// Patch updates only selected fields in the objects
-	Patch(req interface{}) (err error)
+	// Patch updates only selected fields in the 'what' object
+	// selected from 'where' object
+	Patch(what interface{}, where interface{}) (err error)
 
 	// Delete given object
 	Delete(req interface{}) (err error)
-
-	//Initialize the repository providing the database access
-	Init(db interface{}) (err error)
 }
