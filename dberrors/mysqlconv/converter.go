@@ -1,54 +1,54 @@
-package mysql
+package mysqlconv
 
 import (
 	"database/sql"
-	msql "github.com/go-sql-driver/mysql"
-	dbe "github.com/kucjac/go-rest-sdk/errors/dberrors"
+	"github.com/go-sql-driver/mysql"
+	"github.com/kucjac/go-rest-sdk/dberrors"
 )
 
-// MySQLConverter is a DBErrorConverter interface implementation
-// The Converter can convert provided error into *DBError with specific logic.
+// MySQLConverter is a Converter interface implementation
+// The Converter can convert provided error into *Error with specific logic.
 // Check the Convert method documentation for more information on how it distinguish given error
 type MySQLConverter struct {
-	// codeMap puts an error code or sqlstate into map and returns dberrors.DBError prototype
-	codeMap map[interface{}]dbe.DBError
+	// codeMap puts an error code or sqlstate into map and returns dberrors.Error prototype
+	codeMap map[interface{}]dberrors.Error
 
 	// sqlStateMap is a helper map that recognises the sqlstate for given error code
 	sqlStateMap map[uint16]string
 }
 
-// Convert converts provided 'err' error into *dbe.DBError type.
-// With this method MySQLConverter implements DBErrorConverter interface.
-// Convert distinguish  and convert specific error of types sql.Err*, msql.Err*,
-// and *msql.MySQLError. If an error is of different type it returns new entity of
+// Convert converts provided 'err' error into *dberrors.Error type.
+// With this method MySQLConverter implements ErrorConverter interface.
+// Convert distinguish  and convert specific error of types sql.Err*, mysql.Err*,
+// and *mysql.MySQLError. If an error is of different type it returns new entity of
 // dberrors.ErrUnspecifiedError
-// If the error is of *msql.MySQLError type the method checks its code.
-// If the code matches with internal code map it returns proper entity of *dbe.DBError.
+// If the error is of *mysql.MySQLError type the method checks its code.
+// If the code matches with internal code map it returns proper entity of *dberrors.Error.
 // If the code does not exists in the code map, the method gets sqlstate for given code
 // and checks if this sqlstate is in the code map.
 // If the sqlstate does not exists in the code map, the first two numbers from the sqlstate
 // are being checked in the codeMap as a 'sqlstate class'.
 // If not found Convert returns new entity for dberrors.UnspecifiedError
-func (m *MySQLConverter) Convert(err error) *dbe.DBError {
-	// Check whether the given error is of *msql.MySQLError
-	mySQLErr, ok := err.(*msql.MySQLError)
+func (m *MySQLConverter) Convert(err error) *dberrors.Error {
+	// Check whether the given error is of *mysql.MySQLError
+	mySQLErr, ok := err.(*mysql.MySQLError)
 	if !ok {
 		// Otherwise check if it sql.Err* or other errors from mysql package
 		switch err {
-		case msql.ErrInvalidConn, msql.ErrNoTLS, msql.ErrOldProtocol,
-			msql.ErrMalformPkt:
-			return dbe.ErrConnExc.NewWithError(err)
+		case mysql.ErrInvalidConn, mysql.ErrNoTLS, mysql.ErrOldProtocol,
+			mysql.ErrMalformPkt:
+			return dberrors.ErrConnExc.NewWithError(err)
 		case sql.ErrNoRows:
-			return dbe.ErrNoResult.NewWithError(err)
+			return dberrors.ErrNoResult.NewWithError(err)
 
 		case sql.ErrTxDone:
-			return dbe.ErrTxDone.NewWithError(err)
+			return dberrors.ErrTxDone.NewWithError(err)
 
 		default:
-			return dbe.ErrUnspecifiedError.NewWithError(err)
+			return dberrors.ErrUnspecifiedError.NewWithError(err)
 		}
 	}
-	var dbErr dbe.DBError
+	var dbErr dberrors.Error
 
 	// Check if Error Number is in recogniser
 	dbErr, ok = m.codeMap[mySQLErr.Number]
@@ -60,7 +60,7 @@ func (m *MySQLConverter) Convert(err error) *dbe.DBError {
 	// Otherwise check if given sqlstate is in the codeMap
 	sqlState, ok := m.sqlStateMap[mySQLErr.Number]
 	if !ok || len(sqlState) != 5 {
-		return dbe.ErrUnspecifiedError.NewWithError(err)
+		return dberrors.ErrUnspecifiedError.NewWithError(err)
 	}
 	dbErr, ok = m.codeMap[sqlState]
 	if ok {
@@ -75,7 +75,7 @@ func (m *MySQLConverter) Convert(err error) *dbe.DBError {
 		return dbErr.NewWithError(err)
 	}
 
-	return dbe.ErrUnspecifiedError.NewWithError(err)
+	return dberrors.ErrUnspecifiedError.NewWithError(err)
 }
 
 // New creates new already inited MySQLConverter

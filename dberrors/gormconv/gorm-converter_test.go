@@ -1,20 +1,20 @@
-package gormrepo
+package gormconv
 
 import (
 	"database/sql"
 	"errors"
 	"github.com/jinzhu/gorm"
-	"github.com/kucjac/go-rest-sdk/errors/dberrors"
+	"github.com/kucjac/go-rest-sdk/dberrors"
 	. "github.com/smartystreets/goconvey/convey"
 	"testing"
 )
 
-func TestGORMConverterInit(t *testing.T) {
+func TestNewGormConverter(t *testing.T) {
 
-	Convey("Subject: Creating new GORMErrorConverter and initialize it with Init method", t, func() {
+	Convey("Subject: Creating new GORMConverter and initialize it with Init method", t, func() {
 
-		Convey("Having *GORMErrorConverter entity and some *gorm.DB connections", func() {
-			var errorConverter *GORMErrorConverter
+		Convey("Having *GORMConverter entity and some *gorm.DB connections", func() {
+			var errorConverter *GORMConverter
 
 			dbSqlite, _ := gorm.Open("sqlite3", "./tests.db")
 			dbPostgres, _ := gorm.Open("postgres", "host=myhost port=myport")
@@ -30,22 +30,22 @@ func TestGORMConverterInit(t *testing.T) {
 
 				Convey("If the dialect is supported, specific converter would be set", func() {
 					for _, db := range gormSupported {
-						errorConverter = new(GORMErrorConverter)
-						err = errorConverter.Init(db)
+						errorConverter, err = New(db)
 						So(err, ShouldBeNil)
+						So(errorConverter, ShouldImplement, (*dberrors.Converter)(nil))
 					}
 				})
 
 				Convey("If the dialect is unsupported an error would be returned", func() {
-					errorConverter = new(GORMErrorConverter)
-					err = errorConverter.Init(dbMSSQL)
+					errorConverter, err = New(dbMSSQL)
 					So(err, ShouldBeError)
+					So(errorConverter, ShouldBeNil)
 				})
 
 				Convey("If provided nil pointer an error would be thrown.", func() {
-					errorConverter = new(GORMErrorConverter)
-					err = errorConverter.Init(dbNil)
+					errorConverter, err = New(dbNil)
 					So(err, ShouldBeError)
+					So(errorConverter, ShouldBeNil)
 				})
 
 			})
@@ -56,16 +56,15 @@ func TestGORMConverterInit(t *testing.T) {
 
 }
 
-func TestGORMErrorConverterConvert(t *testing.T) {
+func TestGORMConverterConvert(t *testing.T) {
 
-	Convey("Subject: Converting an error into *DBError using GormErrorConverter method Convert", t, func() {
+	Convey("Subject: Converting an error into *Error using GormErrorConverter method Convert", t, func() {
 
-		Convey("Having inited GORMErrorConverter", func() {
-			db, _ := gorm.Open("sqlite3", "./tests.db")
+		Convey("Having inited GORMConverter", func() {
+			db, err := gorm.Open("sqlite3", "./tests.db")
+			So(err, ShouldBeNil)
 
-			errorConverter := new(GORMErrorConverter)
-			err := errorConverter.Init(db)
-
+			errorConverter, err := New(db)
 			So(err, ShouldBeNil)
 
 			Convey("Providing any error would result with *DBerror", func() {
@@ -82,7 +81,7 @@ func TestGORMErrorConverterConvert(t *testing.T) {
 
 				for _, err := range convertErrors {
 					converted := errorConverter.Convert(err)
-					So(converted, ShouldHaveSameTypeAs, &dberrors.DBError{})
+					So(converted, ShouldHaveSameTypeAs, &dberrors.Error{})
 				}
 			})
 

@@ -12,7 +12,7 @@ var (
 	ErrUnknownType        = errors.New("Unknown type of the field")
 )
 
-// RestErrorLink is an object that contains
+// ErrorLink is an object that contains
 // link that leads to further details about this particular occurrence of the problem.
 type ErrorLink struct {
 	About string `json:"about"`
@@ -37,8 +37,8 @@ func (d *Detail) copy() *Detail {
 	return detail
 }
 
-// RestError represents full JSON-API error. It's easier to
-type RestError struct {
+// Error represents full JSON-API error. It's easier to
+type Error struct {
 	// ID is a unique identifier for this particular occurence of the problem
 	ID string `json:"id,omitempty"`
 
@@ -61,9 +61,9 @@ type RestError struct {
 	Detail *Detail `json:"detail,omitempty"`
 }
 
-// New creates new *RestError entity that is a copy of given RestError prototype.
-func (r RestError) New() *RestError {
-	return &RestError{Code: r.Code, Title: r.Title, Status: r.Status, Detail: r.Detail.copy()}
+// New creates new *Error entity that is a copy of given Error prototype.
+func (r Error) New() *Error {
+	return &Error{Code: r.Code, Title: r.Title, Status: r.Status, Detail: r.Detail.copy()}
 }
 
 // AddLink adds the link to the Error Category.
@@ -71,7 +71,7 @@ func (r RestError) New() *RestError {
 // - urlBase - string representing the url link to the error category
 // The method checks if the urlBase is a correct url and then
 // appends the error category code to the urlBase
-func (r *RestError) AddLink(urlBase string) error {
+func (r *Error) AddLink(urlBase string) error {
 	// if the url ends with '/', trim it
 	if last := len(urlBase) - 1; last >= 0 && urlBase[last] == '/' {
 		urlBase = urlBase[:last]
@@ -84,18 +84,18 @@ func (r *RestError) AddLink(urlBase string) error {
 	return nil
 }
 
-// AddDetailInfo appends the provided 'infos' argument to the given RestError's Detail field.
+// AddDetailInfo appends the provided 'infos' argument to the given Error's Detail field.
 // If the Detail field is nil the new Detail entity would be created.
-func (r *RestError) AddDetailInfo(infos ...string) {
+func (r *Error) AddDetailInfo(infos ...string) {
 	if r.Detail == nil {
 		r.Detail = &Detail{}
 	}
 	r.Detail.Info = append(r.Detail.Info, infos...)
 }
 
-// Compare compares the given RestError entity with an RestError prototype 'err'
+// Compare compares the given Error entity with an Error prototype 'err'
 // If both error and prototype has the same code the method returns 'true'.
-func (r *RestError) Compare(err RestError) bool {
+func (r *Error) Compare(err Error) bool {
 	if r.Code != err.Code {
 		return false
 	}
@@ -103,6 +103,6 @@ func (r *RestError) Compare(err RestError) bool {
 }
 
 // Error implements error interface
-func (r *RestError) Error() string {
+func (r *Error) Error() string {
 	return fmt.Sprintf("%s-%s", r.Code, r.ID)
 }

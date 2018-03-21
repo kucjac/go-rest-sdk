@@ -8,7 +8,7 @@ import (
 )
 
 // errorPrototypes all possible error prototypes
-var errorPrototypes []DBError = []DBError{
+var errorPrototypes []Error = []Error{
 	ErrWarning,
 	ErrNoResult,
 	ErrConnExc,
@@ -38,12 +38,12 @@ var errorPrototypes []DBError = []DBError{
 }
 
 func TestNew(t *testing.T) {
-	Convey("Having DBError prototypes", t, func() {
+	Convey("Having Error prototypes", t, func() {
 		var randomMessage string
 		var randomError error
-		var createdErr *DBError
+		var createdErr *Error
 
-		Convey("Using New method on prototype should create a new *DBError entity with the same id and title as prototype", func() {
+		Convey("Using New method on prototype should create a new *Error entity with the same id and title as prototype", func() {
 			for _, proto := range errorPrototypes {
 				createdErr = proto.New()
 				So(createdErr.ID, ShouldEqual, proto.ID)
@@ -52,7 +52,7 @@ func TestNew(t *testing.T) {
 			}
 		})
 
-		Convey("Using NewWithMessage method should create a new *DBError with the same id, title as prototype with the Message provided in the argument", func() {
+		Convey("Using NewWithMessage method should create a new *Error with the same id, title as prototype with the Message provided in the argument", func() {
 			for _, proto := range errorPrototypes {
 				randomMessage = newRandomMessage()
 				createdErr = proto.NewWithMessage(randomMessage)
@@ -65,7 +65,7 @@ func TestNew(t *testing.T) {
 
 		})
 
-		Convey("Using NewWithError method should create a new *DBError with the same id, title. Provided 'err' argument should be saved in Message field.", func() {
+		Convey("Using NewWithError method should create a new *Error with the same id, title. Provided 'err' argument should be saved in Message field.", func() {
 			for _, proto := range errorPrototypes {
 				randomError = newRandomError()
 
@@ -84,12 +84,12 @@ func TestNew(t *testing.T) {
 func TestCompare(t *testing.T) {
 	Convey("Having error prototypes", t, func() {
 		var ok bool
-		var dbErr *DBError
-		Convey(`If *DBError has the same ID as DBError prototype 
+		var dbErr *Error
+		Convey(`If *Error has the same ID as Error prototype 
 		the Compare method should return true and`, func() {
 
 			for _, proto := range errorPrototypes {
-				dbErr = &DBError{ID: proto.ID}
+				dbErr = &Error{ID: proto.ID}
 
 				ok = dbErr.Compare(proto)
 
@@ -99,7 +99,7 @@ func TestCompare(t *testing.T) {
 		})
 		Convey("Otherwise it should return false", func() {
 			for i := 0; i <= len(errorPrototypes)-2; i++ {
-				dbErr = &DBError{ID: errorPrototypes[i].ID}
+				dbErr = &Error{ID: errorPrototypes[i].ID}
 
 				ok = dbErr.Compare(errorPrototypes[i+1])
 
@@ -114,7 +114,7 @@ func TestGetPrototype(t *testing.T) {
 	Convey(`Having the error entity with the same id as given prototype, 
 		GetPrototype returns the proto`, t, func() {
 		for _, proto := range errorPrototypes {
-			errorEntity := &DBError{ID: proto.ID}
+			errorEntity := &Error{ID: proto.ID}
 			retrievedProto, err := errorEntity.GetPrototype()
 
 			So(err, ShouldBeNil)
@@ -122,14 +122,14 @@ func TestGetPrototype(t *testing.T) {
 		}
 	})
 
-	Convey(`If the DBError entity contains unrecognisable ID, 
+	Convey(`If the Error entity contains unrecognisable ID, 
 	GetPrototype returns error`, t, func() {
-		dbError := &DBError{Title: "There is no ID field"}
+		dbError := &Error{Title: "There is no ID field"}
 
 		_, err := dbError.GetPrototype()
 		So(err, ShouldBeError)
 
-		dbError = &DBError{ID: 131224}
+		dbError = &Error{ID: 131224}
 
 		_, err = dbError.GetPrototype()
 		So(err, ShouldBeError)

@@ -1,38 +1,38 @@
-package postgres
+package pgconv
 
 import (
 	"database/sql"
-	dbe "github.com/kucjac/go-rest-sdk/errors/dberrors"
+	"github.com/kucjac/go-rest-sdk/dberrors"
 	"github.com/lib/pq"
 )
 
-// PostgresErrorConverter is an implementation of DBErrorConverter.
+// PGConverter is an implementation of dberrorsrrors.Converter.
 type PGConverter struct {
-	errorMap map[interface{}]dbe.DBError
+	errorMap map[interface{}]dberrors.Error
 }
 
-// Convert converts the given error into *DBError.
+// Convert converts the given error into *Error.
 // The method checks if given error is of known type, and then returns it.ty
-// If an error is unknown it returns new 'dberrors.ErrUnspecifiedError'.
+// If an error is unknown it returns new 'dberrorsrrors.ErrUnspecifiedError'.
 // At first converter checks if an error is of *pq.Error type.
 // Having a postgres *pq.Error it checks if an ErrorCode is in the map,
 // and returns it if true. Otherwise method checks if the ErrorClass exists in map.
-// If it is present, new *DBError of given type is returned.
-func (p *PGConverter) Convert(err error) (dbeErr *dbe.DBError) {
+// If it is present, new *Error of given type is returned.
+func (p *PGConverter) Convert(err error) (dberrorsErr *dberrors.Error) {
 	pgError, ok := err.(*pq.Error)
 	if !ok {
 		// The error may be of sql.ErrNoRows type
 		if err == sql.ErrNoRows {
-			return dbe.ErrNoResult.NewWithError(err)
+			return dberrors.ErrNoResult.NewWithError(err)
 		} else if err == sql.ErrTxDone {
-			return dbe.ErrTxDone.NewWithError(err)
+			return dberrors.ErrTxDone.NewWithError(err)
 		}
-		return dbe.ErrUnspecifiedError.NewWithError(err)
+		return dberrors.ErrUnspecifiedError.NewWithError(err)
 
 	}
 
-	// DBError prototype
-	var dbErrorProto dbe.DBError
+	// Error prototype
+	var dbErrorProto dberrors.Error
 
 	// First check if recogniser has entire error code in it
 	dbErrorProto, ok = p.errorMap[pgError.Code]
@@ -48,7 +48,7 @@ func (p *PGConverter) Convert(err error) (dbeErr *dbe.DBError) {
 
 	// If the Error Class is not presen in the error map
 	// return ErrDBNotMapped
-	return dbe.ErrUnspecifiedError.NewWithError(err)
+	return dberrors.ErrUnspecifiedError.NewWithError(err)
 }
 
 // New creates new PGConverter

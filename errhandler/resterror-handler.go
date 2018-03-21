@@ -1,4 +1,4 @@
-package errors
+package errhandler
 
 import (
 	"errors"
@@ -6,7 +6,7 @@ import (
 	"github.com/kucjac/go-rest-sdk/errors/resterrors"
 )
 
-var defaultErrorMap map[dberrors.DBError]*resterrors.RestError = map[dberrors.DBError]*resterrors.RestError{
+var defaultErrorMap map[dberrors.Error]*resterrors.RestError = map[dberrors.Error]*resterrors.RestError{
 	dberrors.ErrWarning:               nil,
 	dberrors.ErrNoResult:              resterrors.ErrResourceNotFound.New(),
 	dberrors.ErrConnExc:               resterrors.ErrInternalError.New(),
@@ -36,7 +36,7 @@ var defaultErrorMap map[dberrors.DBError]*resterrors.RestError = map[dberrors.DB
 
 // RestErrorHandler is a handler that
 type RestErrorHandler struct {
-	dbToRest map[dberrors.DBError]*resterrors.RestError
+	dbToRest map[dberrors.Error]*resterrors.RestError
 }
 
 // NewErrorHandler
@@ -44,10 +44,10 @@ func NewErrorHandler() *RestErrorHandler {
 	return &RestErrorHandler{dbToRest: defaultErrorMap}
 }
 
-// HandleDBError
-func (r *RestErrorHandler) HandleDBError(dberr *dberrors.DBError,
+// HandleError
+func (r *RestErrorHandler) HandleError(dberr *dberrors.Error,
 ) (resterr *resterrors.RestError, err error) {
-	var proto dberrors.DBError
+	var proto dberrors.Error
 	var ok bool
 
 	// Get the prototype for given dberr
@@ -67,13 +67,13 @@ func (r *RestErrorHandler) HandleDBError(dberr *dberrors.DBError,
 }
 
 // LoadCustomErrorMap
-func (r *RestErrorHandler) LoadCustomErrorMap(errorMap map[dberrors.DBError]*resterrors.RestError,
+func (r *RestErrorHandler) LoadCustomErrorMap(errorMap map[dberrors.Error]*resterrors.RestError,
 ) {
 	r.dbToRest = errorMap
 }
 
 // UpdateErrorMapEntry
-func (r *RestErrorHandler) UpdateErrorMapEntry(dberr dberrors.DBError,
+func (r *RestErrorHandler) UpdateErrorMapEntry(dberr dberrors.Error,
 	resterr *resterrors.RestError) {
 	r.dbToRest[dberr] = resterr
 }
