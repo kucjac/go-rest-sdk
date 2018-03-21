@@ -14,13 +14,19 @@ import (
 type Foo struct {
 	ID    uint
 	Name  string
-	Bar   *Bar
-	BarID uint
+	Bar   *Bar `gorm:"foreignkey:BarID"`
+	BarID uint `gorm:"index"`
 }
 
 type Bar struct {
+	ID       uint
+	Name     string
+	Property int
+}
+
+type Foobar struct {
 	ID   uint
-	Name string
+	Name string `gorm:"type:varchar(5);unique"`
 }
 
 type NotInDB struct{}
@@ -268,13 +274,7 @@ func TestGORMRepositorySelectWithParams(t *testing.T) {
 			So(err, ShouldBeNil)
 
 			// Settle database
-			var someBars []*Bar = []*Bar{
-				{Name: "First"}, {Name: "Second"}, {Name: "Third"},
-				{Name: "Fourth"}, {Name: "Fifth"}, {Name: "Sixth"}}
-			for _, bar := range someBars {
-				err = db.Create(bar).Error
-				So(err, ShouldBeNil)
-			}
+			var someBars []*Bar = seedBars(db)
 
 			Convey(`Should list all records for given 'req' restricions 
 				and listParameters`, func() {
@@ -403,14 +403,80 @@ func TestGORMRepositorySelectWithParams(t *testing.T) {
 func TestGORMRepositoryUpdate(t *testing.T) {
 
 	Convey("Subject: Updates whole model entity so that any field would be replaced", t, func() {
+		db, err := openGormSqlite()
+		So(err, ShouldBeNil)
 
-		Convey("Using an Update method on GORMRepository with provided 'req' model entity.", func() {
+		defer db.Close()
+		defer clearDB(db)
 
-			Convey("Should update whole records for given restrictions", nil)
+		var bars []*Bar = seedBars(db)
+		Convey(`Using an Update method on GORMRepository 
+			with provided 'req' model entity.`, func() {
 
-			Convey("Should not update only provided fields", nil)
+			gormRepo, err := New(db)
+			So(err, ShouldBeNil)
 
-			Convey("Should return *DBError if an error occurs", nil)
+			Convey("Should update whole records for given restrictions", func() {
+				Convey(`By providing only one property and ID, the given update method would 
+					clear other properties`, func() {
+					var bar, updated *Bar = bars[0], &Bar{Name: "FirstUpdated"}
+
+					// In order to keep ID the updated entity must contain ID of the requested ID
+					updated.ID = bar.ID
+					err = gormRepo.Update(updated)
+					So(err, ShouldBeNil)
+
+					So(updated.ID, ShouldEqual, bar.ID)
+					So(updated.Name, ShouldNotEqual, bar.Name)
+					So(updated.Property, ShouldNotEqual, bar.Property)
+					So(updated.Property, ShouldEqual, 0)
+				})
+
+				Convey(`By not providing ID - Primary Key in the 'req' object
+				 the updated object would have a new ID.`, func() {
+					var bar, updated *Bar = bars[1], &Bar{Name: "SecondNoID"}
+					err = gormRepo.Update(updated)
+					So(err, ShouldBeNil)
+
+					So(updated.ID, ShouldNotEqual, bar.ID)
+					So(updated.Name, ShouldNotEqual, bar.Name)
+				})
+
+				Convey(`By providing ID - Primary Key in the 'req' object
+					and none other paramaters the query would result in an empty record.`, func() {
+					var bar, updated *Bar = bars[2], &Bar{}
+					updated.ID = bar.ID
+
+					// This would search for records with id as bar.ID and property as
+					//bars[3].property and update their fields so that Name = 'Changed'
+					err = gormRepo.Update(updated)
+					So(err, ShouldBeNil)
+
+					So(updated.Name, ShouldEqual, "")
+					So(updated.Property, ShouldEqual, 0)
+				})
+
+				Convey(`If provided ID is not in the table new object is 
+					created with provided ID`, func() {
+					err = gormRepo.Update(&Bar{ID: 12345, Name: "Name for new"})
+					So(err, ShouldBeNil)
+
+					var bar *Bar = &Bar{ID: 12345}
+					err = db.Find(bar).Error
+					So(err, ShouldBeNil)
+
+					So(bar.Name, ShouldEqual, "Name for new")
+
+				})
+			})
+
+			Convey("Should return *DBError if an error occurs", func() {
+				err = gormRepo.Update(&NotInDB{})
+				So(err, ShouldBeError)
+
+				So(err, ShouldHaveSameTypeAs, &dberrors.DBError{})
+
+			})
 
 		})
 
@@ -422,13 +488,67 @@ func TestGORMRepositoryPatch(t *testing.T) {
 
 	Convey("Subject: Updates the database record field from 'what' that matches given on 'where' restriction.", t, func() {
 
-		Convey("Using a Patch method on GORMRepository with provided 'what' fields to change on 'where' restrictions .", func() {
+		db, err := openGormSqlite()
+		So(err, ShouldBeNil)
 
-			Convey("Should update all records 'what' fields that  match given 'where'", nil)
+		defer db.Close()
+		defer clearDB(db)
 
-			Convey("Should not update all record for given 'where'", nil)
+		var bars []*Bar = seedBars(db)
 
-			Convey("Should return *DBError if an error occurs", nil)
+		Convey(`Using a Patch method on GORMRepository with provided 'what' fields 
+			to change on 'where' restrictions.`, func() {
+			gormRepo, err := New(db)
+			So(err, ShouldBeNil)
+
+			Convey("Should update all 'what' records fields that  match given 'where'", func() {
+				var what *Bar = &Bar{Name: "ChangedFirst", Property: 1234}
+				err = gormRepo.Patch(what, &Bar{ID: bars[0].ID})
+				So(err, ShouldBeNil)
+
+				var getted *Bar = &Bar{ID: bars[0].ID}
+				db.Find(getted)
+
+				So(getted.Name, ShouldEqual, what.Name)
+				So(getted.Property, ShouldEqual, what.Property)
+			})
+
+			Convey("Should not update all record for given 'where'", func() {
+				var req *Bar = &Bar{Name: "Changed Second"}
+				err = gormRepo.Patch(req, &Bar{ID: bars[1].ID})
+				So(err, ShouldBeNil)
+
+				var getted *Bar = &Bar{ID: bars[1].ID}
+				db.Find(getted)
+
+				Convey("Fields not included in 'req' should not change", func() {
+					So(getted.ID, ShouldEqual, bars[1].ID)
+					So(getted.Property, ShouldEqual, bars[1].Property)
+				})
+
+				Convey("Fields included in 'req' should change", func() {
+					So(getted.Name, ShouldNotEqual, bars[1].Name)
+				})
+
+			})
+
+			Convey("Should return *DBError if an error occurs", func() {
+				var foobar *Foobar = &Foobar{Name: "Name"}
+
+				db.Create(foobar)
+				var name string = "Long Name longer than possible"
+				db.Create(&Foobar{Name: name})
+				err = gormRepo.Patch(&Foobar{Name: name},
+					Foobar{ID: foobar.ID},
+				)
+				So(err, ShouldBeError)
+				So(err, ShouldHaveSameTypeAs, &dberrors.DBError{})
+
+				var bar *Bar = &Bar{Name: "Non existend id name"}
+				err = gormRepo.Patch(bar, Bar{ID: 12345})
+				So(err, ShouldBeError)
+
+			})
 
 		})
 
@@ -440,13 +560,44 @@ func TestGORMRepositoryDelete(t *testing.T) {
 
 	Convey("Subject: Deleting the database records that matches the 'req' object.", t, func() {
 
+		db, err := openGormSqlite()
+		So(err, ShouldBeNil)
+
+		defer db.Close()
+		defer clearDB(db)
+
+		var bars []*Bar = seedBars(db)
 		Convey("Using a Delete method on GORMRepository for given 'req' restrictions", func() {
+			gormRepo, err := New(db)
+			So(err, ShouldBeNil)
 
-			Convey("Should delete all files that matches the 'req' restrictions", nil)
+			Convey("Should delete all files that matches the 'req' restrictions", func() {
+				var where []int = []int{1, 2, 3}
 
-			Convey("Should not delete files for disjoint restrictions", nil)
+				err = gormRepo.Delete(&Bar{}, where)
+				So(err, ShouldBeNil)
 
-			Convey("Should return *DBError if an error occurs", nil)
+				var gettedBars []*Bar
+
+				db.Find(&gettedBars)
+
+				So(len(gettedBars), ShouldEqual, 3)
+				So(len(gettedBars), ShouldNotEqual, len(bars))
+				So(gettedBars[0], ShouldNotEqual, bars[0])
+
+				err = gormRepo.Delete(&Bar{}, Bar{ID: 5})
+				So(err, ShouldBeNil)
+
+				var bar *Bar = &Bar{ID: 5}
+				err = db.Find(bar).Error
+
+				So(err, ShouldBeError)
+				So(bar, ShouldNotResemble, bars[4])
+			})
+
+			Convey("Should return *DBError if an error occurs", func() {
+				err = gormRepo.Delete(&Foobar{}, Foobar{ID: 1234})
+			})
 
 		})
 
@@ -468,17 +619,24 @@ func openGormSqlite() (*gorm.DB, error) {
 
 func migrateModels(db *gorm.DB) error {
 	if db != nil {
-		if !db.HasTable(&Bar{}) {
-			db.AutoMigrate(&Bar{})
-		}
-		if !db.HasTable(&Foo{}) {
-			db.AutoMigrate(&Foo{})
-		}
+		db.AutoMigrate(&Bar{}, &Foo{}, &Foobar{})
 		return nil
 	}
 	return errors.New("Nil pointer provided")
 }
 
 func clearDB(db *gorm.DB) {
-	db.DropTableIfExists(&Bar{}, &Foo{})
+	db.DropTableIfExists(&Bar{}, &Foo{}, &Foobar{})
+}
+
+func seedBars(db *gorm.DB) (bars []*Bar) {
+	bars = []*Bar{
+		{Name: "First", Property: 4141}, {Name: "Second", Property: 1213},
+		{Name: "Third", Property: 21410}, {Name: "Fourth", Property: 111},
+		{Name: "Fifth", Property: 15102}, {Name: "Sixth", Property: 12410}}
+
+	for _, bar := range bars {
+		db.Create(bar)
+	}
+	return bars
 }

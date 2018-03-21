@@ -29,7 +29,6 @@ func (r *SQLiteConverter) Convert(err error) *dbe.DBError {
 	}
 
 	var dbError dbe.DBError
-
 	// Check if Error.ExtendedCode is in recogniser
 	dbError, ok = r.errorMap[sqliteErr.ExtendedCode]
 	if ok {

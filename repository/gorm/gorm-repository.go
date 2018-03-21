@@ -93,7 +93,7 @@ func (g *GORMRepository) ListWithParams(
 	res = forms.PtrSliceOfPtrType(req)
 
 	if len(params.IDs) > 0 {
-		err = g.db.Debug().
+		err = g.db.
 			Offset(params.Offset).
 			Limit(params.Limit).
 			Order(params.Order).
@@ -124,9 +124,15 @@ func (g *GORMRepository) Update(req interface{}) (err error) {
 	return nil
 }
 
-func (g *GORMRepository) Patch(what interface{}, where interface{}) (err error) {
-
-	err = g.db.Update(&what).Select(&where).Error
+func (g *GORMRepository) Patch(req, where interface{}) (err error) {
+	model := forms.ObjOfPtrType(req)
+	var db *gorm.DB
+	db = g.db.Model(model).Where(where).Update(req)
+	err = db.Error
+	rows := db.RowsAffected
+	if rows == 0 && err == nil {
+		err = dberrors.ErrNoResult.NewWithMessage("No rows affected")
+	}
 	if err != nil {
 		err = g.converter.Convert(err)
 		return err
@@ -134,8 +140,14 @@ func (g *GORMRepository) Patch(what interface{}, where interface{}) (err error) 
 	return nil
 }
 
-func (g *GORMRepository) Delete(req interface{}) (err error) {
-	err = g.db.Delete(&req).Error
+func (g *GORMRepository) Delete(req, where interface{}) (err error) {
+	var db *gorm.DB
+	db = g.db.Where(where).Delete(req)
+	err = db.Error
+	rows := db.RowsAffected
+	if rows == 0 && err == nil {
+		err = dberrors.ErrNoResult.NewWithMessage("No rows affected")
+	}
 	if err != nil {
 		return g.converter.Convert(err)
 	}
