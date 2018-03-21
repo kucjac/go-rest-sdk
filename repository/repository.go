@@ -2,6 +2,7 @@ package repository
 
 // List Parameters contains fields common for queries
 type ListParameters struct {
+	IDs    []int
 	Limit  int `form:"page_size"`
 	Offset int `form:"page"`
 	Order  string

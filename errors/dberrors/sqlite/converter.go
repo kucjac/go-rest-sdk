@@ -17,7 +17,7 @@ type SQLiteConverter struct {
 // It is method that implements DBErrorConverter Interface
 func (r *SQLiteConverter) Convert(err error) *dbe.DBError {
 	// Check if the error is of '*sqlite3.Error' type
-	sqliteErr, ok := err.(*sqlite3.Error)
+	sqliteErr, ok := err.(sqlite3.Error)
 	if !ok {
 		// if not check sql errors
 		if err == sql.ErrNoRows {

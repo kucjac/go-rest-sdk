@@ -20,6 +20,7 @@ var defaultSQLiteErrorMap map[interface{}]dbe.DBError = map[interface{}]dbe.DBEr
 	sqlite3.ErrConstraintForeignKey: dbe.ErrForeignKeyViolation,
 	sqlite3.ErrConstraintUnique:     dbe.ErrUniqueViolation,
 	sqlite3.ErrConstraintNotNull:    dbe.ErrNotNullViolation,
+	sqlite3.ErrConstraintPrimaryKey: dbe.ErrUniqueViolation,
 
 	sqlite3.ErrProtocol: dbe.ErrInvalidTransState,
 

@@ -70,6 +70,22 @@ func SliceOfPtrType(req interface{}) (res interface{}) {
 	return res
 }
 
+// PtrSliceOfPtrType returns a pointer to an empty slice of pointers of a type provided in request
+// In example providing type Foo in request, the funciton returns *[]*Foo
+func PtrSliceOfPtrType(req interface{}) (res interface{}) {
+	t := getType(req)
+	res = reflect.New(reflect.SliceOf(reflect.PtrTo(t))).Interface()
+	return res
+}
+
+// SliceOfType returns empty slice of a type provided in request
+// In example providing type Foo in request, the function returns res of type []Foo
+func SliceOfType(req interface{}) (res interface{}) {
+	t := getType(req)
+	res = reflect.New(reflect.SliceOf(t)).Elem().Interface()
+	return res
+}
+
 // StructName returns the name of the provided model
 func StructName(model interface{}) string {
 	t := getType(model)
