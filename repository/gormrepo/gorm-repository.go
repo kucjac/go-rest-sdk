@@ -3,7 +3,8 @@ package gormrepo
 import (
 	"errors"
 	"github.com/jinzhu/gorm"
-	"github.com/kucjac/go-rest-sdk/errors/dberrors"
+	"github.com/kucjac/go-rest-sdk/dberrors"
+	"github.com/kucjac/go-rest-sdk/dberrors/gormconv"
 	"github.com/kucjac/go-rest-sdk/forms"
 	"github.com/kucjac/go-rest-sdk/repository"
 	"reflect"
@@ -11,12 +12,12 @@ import (
 
 type GORMRepository struct {
 	db        *gorm.DB
-	converter dberrors.DBErrorConverter
+	converter dberrors.Converter
 }
 
 func New(db *gorm.DB) (*GORMRepository, error) {
 	gormRepo := &GORMRepository{}
-	err := gormRepo.init(db)
+	err := gormRepo.initialize(db)
 	if err != nil {
 		return nil, err
 	}
@@ -24,24 +25,18 @@ func New(db *gorm.DB) (*GORMRepository, error) {
 
 }
 
-func (g *GORMRepository) init(db *gorm.DB) (err error) {
+func (g *GORMRepository) initialize(db *gorm.DB) (err error) {
 	if db == nil {
 		err = errors.New("Nil pointer as an argument provided.")
 		return
 	}
 	g.db = db
 
-	// Initialize GORM Error Converter
-	gormConverter := new(GORMErrorConverter)
-
-	err = gormConverter.Init(db)
+	// Get Error converter
+	g.converter, err = gormconv.New(db)
 	if err != nil {
 		return err
 	}
-
-	// Assign GORM Error Converter as a repository converter
-	g.converter = gormConverter
-
 	return nil
 }
 

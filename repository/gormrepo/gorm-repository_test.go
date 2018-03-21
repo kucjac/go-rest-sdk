@@ -4,9 +4,8 @@ import (
 	"errors"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
-	"github.com/kucjac/go-rest-sdk/errors/dberrors"
+	"github.com/kucjac/go-rest-sdk/dberrors"
 	"github.com/kucjac/go-rest-sdk/repository"
-
 	. "github.com/smartystreets/goconvey/convey"
 	"testing"
 )
@@ -106,16 +105,17 @@ func TestGORMRepositoryCreate(t *testing.T) {
 				So(db.NewRecord(fooBar), ShouldBeFalse)
 
 			})
-			Convey("Should throw *DBError if an error occurs during the creation process", func() {
+			Convey(`Should throw *dberrors.Error if an error occurs 
+				during the creation process`, func() {
 				So(db.NewRecord(foo), ShouldBeTrue)
 				err = gormRepo.Create(&foo)
 				So(err, ShouldBeNil)
 
 				err = gormRepo.Create(&foo)
 				So(err, ShouldBeError)
-				So(err, ShouldHaveSameTypeAs, &dberrors.DBError{})
+				So(err, ShouldHaveSameTypeAs, &dberrors.Error{})
 
-				dbErr := err.(*dberrors.DBError)
+				dbErr := err.(*dberrors.Error)
 				proto, err := dbErr.GetPrototype()
 				So(err, ShouldBeNil)
 				So(proto, ShouldResemble, dberrors.ErrUniqueViolation)
@@ -176,12 +176,12 @@ func TestGORMRepositoryGet(t *testing.T) {
 
 				})
 
-				Convey("Should throw *DBError if an error occurs", func() {
+				Convey("Should throw *Error if an error occurs", func() {
 
 					res, err := gormRepo.Get(&Foo{ID: 99999})
 					So(err, ShouldBeError)
 					So(res, ShouldBeNil)
-					So(err, ShouldHaveSameTypeAs, &dberrors.DBError{})
+					So(err, ShouldHaveSameTypeAs, &dberrors.Error{})
 
 				})
 			})
@@ -238,13 +238,13 @@ func TestGORMRepositorySelect(t *testing.T) {
 
 			})
 
-			Convey("Should return *DBError if an error occurs", func() {
+			Convey("Should return *Error if an error occurs", func() {
 
 				res, err := gormRepo.List(&NotInDB{})
 				So(err, ShouldBeError)
 				So(res, ShouldBeNil)
 
-				_, ok := err.(*dberrors.DBError)
+				_, ok := err.(*dberrors.Error)
 				So(ok, ShouldBeTrue)
 
 			})
@@ -383,13 +383,13 @@ func TestGORMRepositorySelectWithParams(t *testing.T) {
 				})
 			})
 
-			Convey("Should return *DBError if an error occurs", func() {
+			Convey("Should return *Error if an error occurs", func() {
 				res, err := gormRepo.ListWithParams(&NotInDB{},
 					&repository.ListParameters{Limit: 10})
 				So(err, ShouldBeError)
 				So(res, ShouldBeNil)
 
-				_, ok := err.(*dberrors.DBError)
+				_, ok := err.(*dberrors.Error)
 				So(ok, ShouldBeTrue)
 
 			})
@@ -470,11 +470,11 @@ func TestGORMRepositoryUpdate(t *testing.T) {
 				})
 			})
 
-			Convey("Should return *DBError if an error occurs", func() {
+			Convey("Should return *Error if an error occurs", func() {
 				err = gormRepo.Update(&NotInDB{})
 				So(err, ShouldBeError)
 
-				So(err, ShouldHaveSameTypeAs, &dberrors.DBError{})
+				So(err, ShouldHaveSameTypeAs, &dberrors.Error{})
 
 			})
 
@@ -532,7 +532,7 @@ func TestGORMRepositoryPatch(t *testing.T) {
 
 			})
 
-			Convey("Should return *DBError if an error occurs", func() {
+			Convey("Should return *Error if an error occurs", func() {
 				var foobar *Foobar = &Foobar{Name: "Name"}
 
 				db.Create(foobar)
@@ -542,7 +542,7 @@ func TestGORMRepositoryPatch(t *testing.T) {
 					Foobar{ID: foobar.ID},
 				)
 				So(err, ShouldBeError)
-				So(err, ShouldHaveSameTypeAs, &dberrors.DBError{})
+				So(err, ShouldHaveSameTypeAs, &dberrors.Error{})
 
 				var bar *Bar = &Bar{Name: "Non existend id name"}
 				err = gormRepo.Patch(bar, Bar{ID: 12345})
@@ -595,7 +595,7 @@ func TestGORMRepositoryDelete(t *testing.T) {
 				So(bar, ShouldNotResemble, bars[4])
 			})
 
-			Convey("Should return *DBError if an error occurs", func() {
+			Convey("Should return *Error if an error occurs", func() {
 				err = gormRepo.Delete(&Foobar{}, Foobar{ID: 1234})
 			})
 

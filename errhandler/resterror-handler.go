@@ -2,11 +2,11 @@ package errhandler
 
 import (
 	"errors"
-	"github.com/kucjac/go-rest-sdk/errors/dberrors"
-	"github.com/kucjac/go-rest-sdk/errors/resterrors"
+	"github.com/kucjac/go-rest-sdk/dberrors"
+	"github.com/kucjac/go-rest-sdk/resterrors"
 )
 
-var defaultErrorMap map[dberrors.Error]*resterrors.RestError = map[dberrors.Error]*resterrors.RestError{
+var defaultErrorMap map[dberrors.Error]*resterrors.Error = map[dberrors.Error]*resterrors.Error{
 	dberrors.ErrWarning:               nil,
 	dberrors.ErrNoResult:              resterrors.ErrResourceNotFound.New(),
 	dberrors.ErrConnExc:               resterrors.ErrInternalError.New(),
@@ -34,19 +34,19 @@ var defaultErrorMap map[dberrors.Error]*resterrors.RestError = map[dberrors.Erro
 	dberrors.ErrUnspecifiedError:      resterrors.ErrInternalError.New(),
 }
 
-// RestErrorHandler is a handler that
-type RestErrorHandler struct {
-	dbToRest map[dberrors.Error]*resterrors.RestError
+// ErrorHandler is a handler that
+type ErrorHandler struct {
+	dbToRest map[dberrors.Error]*resterrors.Error
 }
 
 // NewErrorHandler
-func NewErrorHandler() *RestErrorHandler {
-	return &RestErrorHandler{dbToRest: defaultErrorMap}
+func New() *ErrorHandler {
+	return &ErrorHandler{dbToRest: defaultErrorMap}
 }
 
 // HandleError
-func (r *RestErrorHandler) HandleError(dberr *dberrors.Error,
-) (resterr *resterrors.RestError, err error) {
+func (r *ErrorHandler) HandleError(dberr *dberrors.Error,
+) (resterr *resterrors.Error, err error) {
 	var proto dberrors.Error
 	var ok bool
 
@@ -67,13 +67,13 @@ func (r *RestErrorHandler) HandleError(dberr *dberrors.Error,
 }
 
 // LoadCustomErrorMap
-func (r *RestErrorHandler) LoadCustomErrorMap(errorMap map[dberrors.Error]*resterrors.RestError,
+func (r *ErrorHandler) LoadCustomErrorMap(errorMap map[dberrors.Error]*resterrors.Error,
 ) {
 	r.dbToRest = errorMap
 }
 
 // UpdateErrorMapEntry
-func (r *RestErrorHandler) UpdateErrorMapEntry(dberr dberrors.Error,
-	resterr *resterrors.RestError) {
+func (r *ErrorHandler) UpdateErrorMapEntry(dberr dberrors.Error,
+	resterr *resterrors.Error) {
 	r.dbToRest[dberr] = resterr
 }
