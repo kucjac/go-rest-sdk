@@ -244,9 +244,6 @@ func TestGORMRepositorySelect(t *testing.T) {
 				So(err, ShouldBeError)
 				So(res, ShouldBeNil)
 
-				_, ok := err.(*dberrors.Error)
-				So(ok, ShouldBeTrue)
-
 			})
 
 		})
@@ -388,10 +385,6 @@ func TestGORMRepositorySelectWithParams(t *testing.T) {
 					&repository.ListParameters{Limit: 10})
 				So(err, ShouldBeError)
 				So(res, ShouldBeNil)
-
-				_, ok := err.(*dberrors.Error)
-				So(ok, ShouldBeTrue)
-
 			})
 
 		})

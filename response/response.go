@@ -1,13 +1,13 @@
 package response
 
-// APIResponse - basic REST API response structure
+// Body - basic REST API response structure
 // Created on purpose of easily managable and
-type APIResponse struct {
+type Body struct {
 	// Status is an easy to check variable with only two possible values:
 	// - 'ok'
 	// - 'error'
 	// If the status is 'ok' the response recipient can proceed to result variable
-	Status ResponseStatus `json:"status"`
+	Status Status `json:"status"`
 
 	// HttpCode is a http status code applicable to this problem
 	// While using multiple ResponseErrors with http status
@@ -23,41 +23,41 @@ type APIResponse struct {
 	// MAY continue processing and encounter multiple problems.
 	Errors []error `json:"errors,omitempty"`
 
-	// Result is a response main content
+	// Content contains all response results
 	// Composed as a map[string]interface{}
 	// Every result should have it's own tag
 	// i.e. "user" : User{1} - user object
 	// 		"users" : []User{1,2} - list (plural)
-	Result map[string]interface{} `json:"result,omitempty"`
+	Content map[string]interface{} `json:"result,omitempty"`
 }
 
-// AddResult adds a result with a 'key' string to the Response
-// The result is saved then as a key:value in the Response.
-func (r *APIResponse) AddResult(key string, result interface{}) {
-	r.Result[key] = result
+// AddContent adds a content for a 'key' string to the response Body
+func (r *Body) AddContent(key string, result interface{}) {
+	r.Content[key] = result
 }
 
-// AddErrors appends errors to the given response
-func (r *APIResponse) AddErrors(err ...error) {
+// AddErrors adds an error for the given response body.
+func (r *Body) AddErrors(err ...error) {
 	r.Errors = append(r.Errors, err...)
 }
 
-// ResponseWithOk prepares APIResponse with Status: 'StatusOk'
-// The response has already set httpStatus to 'OK' - 200.
-func ResponseWithOk() *APIResponse {
-	response := &APIResponse{
+// New creates new response Body with positive status.
+// The function initialize the Body with Status: StatusOK
+// HttpStatus: 200 and empty 'Content'
+func New() *Body {
+	response := &Body{
 		Status:     StatusOk,
 		HttpStatus: 200,
-		Result:     make(map[string]interface{}),
+		Content:    make(map[string]interface{}),
 	}
 	return response
 }
 
-// ResponseWithError prepares APIResponse with Status: 'StatusError'
-// The function first param is the provided httpStatus i.e. BadRequest - 400.
-// The rest arguments are multiple errors.
-func ResponseWithError(httpStatus int, errors ...error) *APIResponse {
-	response := &APIResponse{
+// NewWithError prepares Body with Status: 'StatusError'
+// The function takes httpStatus as a first argument. Whereas it can take any int
+// it is not a good practice. Multiple errors are allow as the remaining arguments.
+func NewWithError(httpStatus int, errors ...error) *Body {
+	response := &Body{
 		Status:     StatusError,
 		HttpStatus: httpStatus,
 	}

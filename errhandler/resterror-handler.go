@@ -44,8 +44,8 @@ func New() *ErrorHandler {
 	return &ErrorHandler{dbToRest: defaultErrorMap}
 }
 
-// HandleError
-func (r *ErrorHandler) HandleError(dberr *dberrors.Error,
+// Handle
+func (r *ErrorHandler) Handle(dberr *dberrors.Error,
 ) (resterr *resterrors.Error, err error) {
 	var proto dberrors.Error
 	var ok bool
@@ -73,7 +73,7 @@ func (r *ErrorHandler) LoadCustomErrorMap(errorMap map[dberrors.Error]*resterror
 }
 
 // UpdateErrorMapEntry
-func (r *ErrorHandler) UpdateErrorMapEntry(dberr dberrors.Error,
+func (r *ErrorHandler) UpdateErrorEntry(dberr dberrors.Error,
 	resterr *resterrors.Error) {
 	r.dbToRest[dberr] = resterr
 }

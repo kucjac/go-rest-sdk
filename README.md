@@ -1,4 +1,4 @@
-rest-response
+go-rest-sdk
 =============
 package that contains basic RESTful API structures.
 

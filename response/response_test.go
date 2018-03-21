@@ -7,36 +7,36 @@ import (
 	"testing"
 )
 
-func TestResponseWithOk(t *testing.T) {
+func TestNew(t *testing.T) {
 	type TestStruct struct {
 		ID   uint
 		Name string
 	}
 	Convey("While having some struct", t, func() {
-		t := &TestStruct{ID: 1, Name: "Test"}
+		s := &TestStruct{ID: 1, Name: "Test"}
 
 		Convey("The correct response would be created with it as a result", func() {
-			response := ResponseWithOk()
-			response.AddResult("testResult", t)
+			response := New()
+			response.AddContent("test content", s)
 
 			Convey("The response result will containt that struct", func() {
 				So(response.Status, ShouldEqual, StatusOk)
 				So(response.HttpStatus, ShouldEqual, 200)
-				So(response.Result, ShouldContainKey, "testResult")
-				So(response.Result["testResult"], ShouldEqual, t)
+				So(response.Content, ShouldContainKey, "test content")
+				So(response.Content["test content"], ShouldEqual, s)
 			})
 		})
 	})
 }
 
-func TestResponseWithError(t *testing.T) {
+func TestNewWithError(t *testing.T) {
 	Convey("While processing something, an error occured", t, func() {
-		err := ErrIncorrectModel
+		err := errors.New("Some error")
 		Convey("The error is of http type 400 - Bad Request", func() {
 			httpStatus := http.StatusBadRequest
 
 			Convey("Prepared response contain that error and status", func() {
-				response := ResponseWithError(httpStatus, err)
+				response := NewWithError(httpStatus, err)
 
 				So(response.HttpStatus, ShouldEqual, 400)
 				So(response.Errors, ShouldContain, err)
@@ -46,9 +46,9 @@ func TestResponseWithError(t *testing.T) {
 	})
 }
 
-func TestResponseAddErrors(t *testing.T) {
+func TestBodyAddErrors(t *testing.T) {
 	Convey("Having some Response", t, func() {
-		res := ResponseWithError(400)
+		res := NewWithError(400)
 
 		Convey("There occured some errors", func() {
 			err1 := errors.New("Some error 1")

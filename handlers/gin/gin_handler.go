@@ -3,150 +3,188 @@ package ginhandler
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/jinzhu/inflection"
-	"github.com/kucjac/go-rest-sdk/errors"
-	"github.com/kucjac/go-rest-sdk/repositories"
+	"github.com/kucjac/go-rest-sdk/dberrors"
+	"github.com/kucjac/go-rest-sdk/errhandler"
+	"github.com/kucjac/go-rest-sdk/forms"
+	"github.com/kucjac/go-rest-sdk/refutils"
+	"github.com/kucjac/go-rest-sdk/repository"
+	"github.com/kucjac/go-rest-sdk/response"
+	"github.com/kucjac/go-rest-sdk/resterrors"
 	"log"
 )
 
-type GinJsonHandler struct {
-	repository restsdk.GenericRepository
+// GinJSONHandler
+type GinJSONHandler struct {
+	repo       repository.GenericRepository
+	errHandler *errhandler.ErrorHandler
 }
 
-func (g *GinJsonHandler) Create(model interface{}) gin.HandlerFunc {
+func (g *GinJSONHandler) Create(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		g.checkRepository()
-
-		obj := restsdk.ObjOfPtrType(model)
-		err := restsdk.BindJSON(c.Request, obj, &restsdk.FormPolicy{FailOnError: true})
+		obj := refutils.ObjOfPtrType(model)
+		err := forms.BindJSON(c.Request, obj, &forms.FormPolicy{FailOnError: true})
 		if err != nil {
-			resErr := &resterrors.ErrInvalidJSONRequest
-			resErr.ExtendDetail(err.Error())
-			restsdk.ResponseWithError(400, resErr)
+			resErr := resterrors.ErrInvalidJSONDocument.New()
+			resErr.AddDetailInfo(err.Error())
+			c.JSON(400, response.NewWithError(400, resErr))
 			return
 		}
 
 		// Create using provided repository
-		err = g.repository.Create(obj)
-		if err != nil {
-			if restErr, ok := err.(*resterrors.ResponseError); ok {
+		dberr := g.repo.Create(obj)
 
-				//If the given error is responseError check wether it is caused on client-side
-				_, IsClientError := resterrors.ClientErrorCodes[restErr.Code]
-				if IsClientError {
-
-					//If this is client side error send it to response
-					c.JSON(400, restsdk.ResponseWithError(400, restErr))
-					return
-				}
+		if dberr != nil {
+			rErr, err := g.errHandler.Handle(dberr)
+			if err != nil {
+				c.JSON(500, response.NewWithError(500, resterrors.ErrInternalError.New()))
+				return
 			}
-
-			// If the error is not of type ResponseError or is not client side errors send internal server error
-			// as a response
-			c.JSON(500, restsdk.ResponseWithError(500, &resterrors.ErrInternalServerError))
+			isInternal := rErr.Compare(resterrors.ErrInternalError)
+			if isInternal {
+				c.JSON(500, response.NewWithError(500, rErr))
+			} else {
+				c.JSON(400, response.NewWithError(400, rErr))
+			}
 			return
 		}
-		response := restsdk.ResponseWithOk()
-		response.AddResult(restsdk.StructName(obj), obj)
-		c.JSON(200, response)
+
+		body := response.New()
+		body.AddContent(refutils.StructName(obj), obj)
+		c.JSON(200, body)
 	}
 }
 
-func (g *GinJsonHandler) Get(model interface{}) gin.HandlerFunc {
+// Get is a JSON gin.HandlerFunc that gets given model entity
+// with provided 'modelname_id' entity
+// The model is taken from the repository based on its id and name
+func (g *GinJSONHandler) Get(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		g.checkRepository()
-		modelName := restsdk.StructName(model)
-		modelID := c.Param(modelName + "id")
+		// Get model name
+		modelName := refutils.StructName(model)
 
+		// modelID should be a url parameter as a ''
+		modelID := c.Param(modelName + "_id")
 		if modelID == "" {
-			c.JSON(400, restsdk.ResponseWithError(400, &resterrors.ErrBadRequestNoID))
+			c.JSON(400, response.NewWithError(400, resterrors.ErrInvalidURI.New()))
 			return
 		}
 
-		obj := restsdk.ObjOfPtrType(model)
+		// create new object entity based on the model
+		obj := refutils.ObjOfPtrType(model)
 
-		result, err := g.repository.Get(obj)
+		// Set the model ID
+		err := forms.SetID(obj, modelID)
 		if err != nil {
-			// Check if error is of known type
-			if rErr, ok := err.(*resterrors.ResponseError); ok {
-				//Check if it is client side error
-				_, clientError := resterrors.ClientErrorCodes[rErr.Code]
-				if clientError {
-					c.JSON(400, restsdk.ResponseWithError(400, rErr))
+			c.JSON(500, response.NewWithError(500, resterrors.ErrInternalError.New()))
+			return
+		}
+
+		// get the specific model from the repository
+		result, dberr := g.repo.Get(obj)
+		if dberr != nil {
+			var isInternal bool
+			// Handle the error
+			restErr, err := g.errHandler.Handle(dberr)
+			if err != nil {
+				isInternal = true
+				restErr = resterrors.ErrInternalError.New()
+			}
+			// Internal Server Error in all other types
+			if !isInternal {
+				if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
+					c.JSON(400, response.NewWithError(400, restErr))
 					return
 				}
 			}
-			// Internal Server Error in all other types
-			c.JSON(500, restsdk.ResponseWithError(500, &resterrors.ErrInternalServerError))
+			c.JSON(500, response.NewWithError(500, restErr))
 			return
 		}
 
-		response := restsdk.ResponseWithOk()
-		response.AddResult(modelName, result)
-		c.JSON(200, response)
+		// Get body
+		body := response.New()
+
+		// Add content
+		body.AddContent(modelName, result)
+
+		// Marshal to json with http.Status - 200
+		c.JSON(200, body)
 		return
 	}
 }
 
-func (g *GinJsonHandler) List(model interface{}) gin.HandlerFunc {
+func (g *GinJSONHandler) List(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		requestObject := restsdk.ObjOfType(model)
-		err := restsdk.BindQuery(c.Request, &requestObject, nil)
+		// Create new request object for the list
+		reqObj := refutils.ObjOfPtrType(model)
+
+		// Bind URL Query to the req object
+		err := forms.BindQuery(c.Request, reqObj, nil)
 		if err != nil {
-			c.JSON(400, restsdk.ResponseWithError(400, &resterrors.ErrInvalidQueryParameters))
+			c.JSON(400, response.NewWithError(400, resterrors.ErrInvalidQueryParameter.New()))
 			return
 		}
 
-		meta := restsdk.ListParameters{}
-		err = restsdk.BindQuery(c.Request, &meta, nil)
+		// Bind URL Query to the list parameters
+		meta := &repository.ListParameters{}
+		err = forms.BindQuery(c.Request, meta, nil)
 		if err != nil {
-			c.JSON(400, restsdk.ResponseWithError(400, &resterrors.ErrInvalidQueryParameters))
+			c.JSON(400, response.NewWithError(400, resterrors.ErrInvalidQueryParameter.New()))
 			return
 		}
+
 		var result interface{}
+		var dberr *dberrors.Error
+
 		if meta.ContainsParameters() {
-			result, err = g.repository.ListWithParams(requestObject, &meta)
+			result, dberr = g.repo.ListWithParams(reqObj, meta)
 		} else {
-			result, err = g.repository.List(requestObject)
+			result, dberr = g.repo.List(reqObj)
 		}
-		if err != nil {
-			if rErr, ok := err.(*resterrors.ResponseError); ok {
-				// Check client Error
-				_, clientError := resterrors.ClientErrorCodes[rErr.Code]
-				if clientError {
-					c.JSON(400, restsdk.ResponseWithError(400, rErr))
+		if dberr != nil {
+			var isInternal bool
+			restErr, err := g.errHandler.Handle(dberr)
+			if err != nil {
+				isInternal = true
+				restErr = resterrors.ErrInternalError.New()
+			}
+			if !isInternal {
+				if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
+					c.JSON(400, response.NewWithError(400, restErr))
 					return
 				}
 			}
-			c.JSON(500, restsdk.ResponseWithError(500, &resterrors.ErrInternalServerError))
+			c.JSON(500, response.NewWithError(500, restErr))
 			return
 		}
 
-		response := restsdk.ResponseWithOk()
-		response.AddResult(inflection.Plural(restsdk.StructName(model)), &result)
-		c.JSON(200, response)
+		body := response.New()
+		body.AddContent(inflection.Plural(refutils.StructName(model)), result)
+		c.JSON(200, body)
+		return
+
 	}
 }
 
-func (g *GinJsonHandler) Update(model interface{}) gin.HandlerFunc {
+func (g *GinJSONHandler) Update(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
 
 	}
 }
 
-func (g *GinJsonHandler) Patch(model interface{}) gin.HandlerFunc {
+func (g *GinJSONHandler) Patch(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
 
 	}
 }
 
-func (g *GinJsonHandler) Delete(model interface{}) gin.HandlerFunc {
+func (g *GinJSONHandler) Delete(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
 
 	}
 }
 
-func (g *GinJsonHandler) checkRepository() {
-	if g.repository == nil {
+func (g *GinJSONHandler) checkRepository() {
+	if g.repo == nil {
 		log.Fatal("No repository set for handler")
 	}
 }

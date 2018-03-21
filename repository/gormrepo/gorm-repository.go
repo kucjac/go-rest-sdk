@@ -5,7 +5,7 @@ import (
 	"github.com/jinzhu/gorm"
 	"github.com/kucjac/go-rest-sdk/dberrors"
 	"github.com/kucjac/go-rest-sdk/dberrors/gormconv"
-	"github.com/kucjac/go-rest-sdk/forms"
+	"github.com/kucjac/go-rest-sdk/refutils"
 	"github.com/kucjac/go-rest-sdk/repository"
 	"reflect"
 )
@@ -40,32 +40,30 @@ func (g *GORMRepository) initialize(db *gorm.DB) (err error) {
 	return nil
 }
 
-func (g *GORMRepository) Create(req interface{}) (err error) {
-	if err = g.db.Create(req).Error; err != nil {
+func (g *GORMRepository) Create(req interface{}) *dberrors.Error {
+	if err := g.db.Create(req).Error; err != nil {
 		return g.converter.Convert(err)
 	}
 	return nil
 }
 
-func (g *GORMRepository) Get(req interface{}) (res interface{}, err error) {
-	res = forms.ObjOfPtrType(req)
-	if err = g.db.First(res, req).Error; err != nil {
-		err = g.converter.Convert(err)
-		return nil, err
+func (g *GORMRepository) Get(req interface{}) (res interface{}, dberr *dberrors.Error) {
+	res = refutils.ObjOfPtrType(req)
+	if err := g.db.First(res, req).Error; err != nil {
+		return nil, g.converter.Convert(err)
 	}
 	return res, nil
 }
 
 func (g *GORMRepository) List(
 	req interface{},
-) (res interface{}, err error) {
+) (res interface{}, dberr *dberrors.Error) {
 	// Get Slice of pointer type 'req'
-	res = forms.PtrSliceOfPtrType(req)
+	res = refutils.PtrSliceOfPtrType(req)
 
 	// List objects provided with arguments probided in request
-	if err = g.db.Find(res, req).Error; err != nil {
-		err = g.converter.Convert(err)
-		return nil, err
+	if err := g.db.Find(res, req).Error; err != nil {
+		return nil, g.converter.Convert(err)
 	}
 
 	return reflect.ValueOf(res).Elem().Interface(), nil
@@ -73,7 +71,7 @@ func (g *GORMRepository) List(
 
 func (g *GORMRepository) ListWithParams(
 	req interface{}, params *repository.ListParameters,
-) (res interface{}, err error) {
+) (res interface{}, dberr *dberrors.Error) {
 	if params == nil {
 		return g.List(req)
 	}
@@ -85,8 +83,9 @@ func (g *GORMRepository) ListWithParams(
 		params.Limit = 10
 	}
 	// Get Slice of pointer type 'req'
-	res = forms.PtrSliceOfPtrType(req)
+	res = refutils.PtrSliceOfPtrType(req)
 
+	var err error
 	if len(params.IDs) > 0 {
 		err = g.db.
 			Offset(params.Offset).
@@ -104,41 +103,39 @@ func (g *GORMRepository) ListWithParams(
 			Error
 	}
 	if err != nil {
-		err = g.converter.Convert(err)
-		return nil, err
+		dberr = g.converter.Convert(err)
+		return nil, dberr
 	}
 	return reflect.ValueOf(res).Elem().Interface(), nil
 }
 
-func (g *GORMRepository) Update(req interface{}) (err error) {
-	err = g.db.Save(req).Error
+func (g *GORMRepository) Update(req interface{}) *dberrors.Error {
+	err := g.db.Save(req).Error
 	if err != nil {
-		err = g.converter.Convert(err)
-		return err
+		return g.converter.Convert(err)
 	}
 	return nil
 }
 
-func (g *GORMRepository) Patch(req, where interface{}) (err error) {
-	model := forms.ObjOfPtrType(req)
+func (g *GORMRepository) Patch(req, where interface{}) *dberrors.Error {
+	model := refutils.ObjOfPtrType(req)
 	var db *gorm.DB
 	db = g.db.Model(model).Where(where).Update(req)
-	err = db.Error
+	err := db.Error
 	rows := db.RowsAffected
 	if rows == 0 && err == nil {
 		err = dberrors.ErrNoResult.NewWithMessage("No rows affected")
 	}
 	if err != nil {
-		err = g.converter.Convert(err)
-		return err
+		return g.converter.Convert(err)
 	}
 	return nil
 }
 
-func (g *GORMRepository) Delete(req, where interface{}) (err error) {
+func (g *GORMRepository) Delete(req, where interface{}) *dberrors.Error {
 	var db *gorm.DB
 	db = g.db.Where(where).Delete(req)
-	err = db.Error
+	err := db.Error
 	rows := db.RowsAffected
 	if rows == 0 && err == nil {
 		err = dberrors.ErrNoResult.NewWithMessage("No rows affected")

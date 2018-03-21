@@ -5,20 +5,20 @@ import (
 	"strings"
 )
 
-// ResponseStatus is a basic status for API Response
+// Status is a basic status for API Response
 // A developer can easily manage the response just by knowing the
 // short status value.
 // The status is a binary value - either the request where operated correctly or there exists error
-type ResponseStatus int
+type Status int
 
 const (
-	Unknown ResponseStatus = iota
+	Unknown Status = iota
 	StatusOk
 	StatusError
 )
 
 // String - implements the Stringer interface
-func (s ResponseStatus) String() string {
+func (s Status) String() string {
 	switch s {
 	case 1:
 		return "ok"
@@ -30,12 +30,12 @@ func (s ResponseStatus) String() string {
 }
 
 // MarshalJSON - implements json marshaller interface
-func (s *ResponseStatus) MarshalJSON() ([]byte, error) {
+func (s *Status) MarshalJSON() ([]byte, error) {
 	return json.Marshal(s.String())
 }
 
 // UnmarshalJSON - implements json Unmarshaler interface
-func (s *ResponseStatus) UnmarshalJSON(b []byte) error {
+func (s *Status) UnmarshalJSON(b []byte) error {
 	var status string
 	if err := json.Unmarshal(b, &status); err != nil {
 		return err
