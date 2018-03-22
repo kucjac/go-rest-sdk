@@ -3,7 +3,6 @@ package ginhandler
 import (
 	"errors"
 	"github.com/gin-gonic/gin"
-	"github.com/jinzhu/inflection"
 	"github.com/kucjac/go-rest-sdk/dberrors"
 	"github.com/kucjac/go-rest-sdk/errhandler"
 	"github.com/kucjac/go-rest-sdk/forms"
@@ -15,28 +14,44 @@ import (
 	"strings"
 )
 
-// GinJSONHandler
+// GinJSONHandler the policies are set manually
 type GinJSONHandler struct {
-	repo       repository.GenericRepository
-	errHandler *errhandler.ErrorHandler
-	formPolicy *forms.FormPolicy
+	repo             repository.GenericRepository
+	errHandler       *errhandler.ErrorHandler
+	QueryPolicy      *forms.Policy
+	JSONPolicy       *forms.Policy
+	ParametersPolicy *forms.Policy
+}
+
+func (g *GinJSONHandler) New() *GinJSONHandler {
+	return &(*g)
+}
+
+func (g *GinJSONHandler) WithQueryPolicy(policy *forms.Policy) *GinJSONHandler {
+	g.QueryPolicy = policy
+	return g
+}
+
+func (g *GinJSONHandler) WithJSONPolicy(policy *forms.Policy) *GinJSONHandler {
+	g.JSONPolicy = policy
+	return g
+}
+
+func (g *GinJSONHandler) WithParamPolicy(policy *forms.Policy) *GinJSONHandler {
+	g.ParametersPolicy = policy
+	return g
 }
 
 // New creates GinJSONHandler for given
 func New(repo repository.GenericRepository,
 	errHandler *errhandler.ErrorHandler,
-	policy *forms.FormPolicy,
 ) (*GinJSONHandler, error) {
 	if repo == nil || errHandler == nil {
 		return nil, errors.New("repository and errorHandler cannot be nil.")
 	}
-	if policy == nil {
-		policy = &forms.DefaultFormPolicy
-	}
 	ginHandler := &GinJSONHandler{
 		repo:       repo,
 		errHandler: errHandler,
-		formPolicy: policy,
 	}
 	return ginHandler, nil
 }
@@ -47,7 +62,7 @@ func (g *GinJSONHandler) Create(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
 
 		obj := refutils.ObjOfPtrType(model)
-		err := forms.BindJSON(c.Request, obj, g.formPolicy)
+		err := forms.BindJSON(c.Request, obj, g.JSONPolicy)
 		if err != nil {
 			resErr := resterrors.ErrInvalidJSONDocument.New()
 			resErr.AddDetailInfo(err.Error())
@@ -62,12 +77,13 @@ func (g *GinJSONHandler) Create(model interface{}) gin.HandlerFunc {
 			rErr, err := g.errHandler.Handle(dberr)
 			if err != nil {
 				c.Error(err)
+				c.Error(dberr)
 				c.JSON(500, response.NewWithError(500, resterrors.ErrInternalError.New()))
 				return
 			}
 			isInternal := rErr.Compare(resterrors.ErrInternalError)
 			if isInternal {
-				c.Error(err)
+				c.Error(dberr)
 				c.JSON(500, response.NewWithError(500, rErr))
 			} else {
 				c.JSON(400, response.NewWithError(400, rErr))
@@ -76,7 +92,7 @@ func (g *GinJSONHandler) Create(model interface{}) gin.HandlerFunc {
 		}
 
 		body := response.New()
-		body.AddContent(refutils.StructName(obj), obj)
+		body.AddContent(refutils.ModelName(obj), obj)
 		c.JSON(201, body)
 	}
 }
@@ -147,48 +163,49 @@ func (g *GinJSONHandler) List(model interface{}) gin.HandlerFunc {
 		reqObj := refutils.ObjOfPtrType(model)
 
 		// Bind URL Query to the req object
-		err := forms.BindQuery(c.Request, reqObj, nil)
+		err := forms.BindQuery(c.Request, reqObj, g.QueryPolicy)
 		if err != nil {
-			c.JSON(400, response.NewWithError(400, resterrors.ErrInvalidQueryParameter.New()))
+			restErr := resterrors.ErrInvalidQueryParameter.New()
+			restErr.AddDetailInfo(err.Error())
+			c.JSON(400, response.NewWithError(400, restErr))
 			return
 		}
 
 		// Bind URL Query to the list parameters
-		meta := &repository.ListParameters{}
-		err = forms.BindQuery(c.Request, meta, nil)
+		parameters := &repository.ListParameters{}
+		err = forms.BindQuery(c.Request, parameters, g.ParametersPolicy)
 		if err != nil {
-			c.JSON(400, response.NewWithError(400, resterrors.ErrInvalidQueryParameter.New()))
+			restErr := resterrors.ErrInvalidQueryParameter.New()
+			restErr.AddDetailInfo(err.Error())
+			c.JSON(400, response.NewWithError(400, restErr))
 			return
 		}
 
 		var result interface{}
 		var dberr *dberrors.Error
 
-		if meta.ContainsParameters() {
-			result, dberr = g.repo.ListWithParams(reqObj, meta)
+		if parameters.ContainsParameters() {
+			log.Println(parameters.IDs)
+			result, dberr = g.repo.ListWithParams(reqObj, parameters)
 		} else {
 			result, dberr = g.repo.List(reqObj)
 		}
+
 		if dberr != nil {
-			var isInternal bool
 			restErr, err := g.errHandler.Handle(dberr)
 			if err != nil {
-				isInternal = true
+				c.Error(err)
 				restErr = resterrors.ErrInternalError.New()
+			} else if isInternal := restErr.Compare(resterrors.ErrInternalError); !isInternal {
+				c.JSON(400, response.NewWithError(400, restErr))
+				return
 			}
-			if !isInternal {
-				if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
-					c.JSON(400, response.NewWithError(400, restErr))
-					return
-				}
-			}
-			c.Error(err)
 			c.JSON(500, response.NewWithError(500, restErr))
 			return
 		}
 
 		body := response.New()
-		body.AddContent(inflection.Plural(refutils.StructName(model)), result)
+		body.AddContent(refutils.ModelName(result), result)
 		c.JSON(200, body)
 		return
 
@@ -210,7 +227,7 @@ func (g *GinJSONHandler) Update(model interface{}) gin.HandlerFunc {
 		reqObj := refutils.ObjOfPtrType(model)
 
 		// BindJSON from the request
-		err := forms.BindJSON(c.Request, reqObj, nil)
+		err := forms.BindJSON(c.Request, reqObj, g.JSONPolicy)
 		if err != nil {
 			restErr := resterrors.ErrInvalidJSONDocument.New()
 			restErr.AddDetailInfo(err.Error())
@@ -249,7 +266,7 @@ func (g *GinJSONHandler) Update(model interface{}) gin.HandlerFunc {
 
 		// Response with the given requested object
 		body := response.New()
-		body.AddContent(modelName, reqObj)
+		body.AddContent(refutils.ModelName(model), reqObj)
 
 		c.JSON(200, body)
 		return
@@ -312,7 +329,7 @@ func (g *GinJSONHandler) Patch(model interface{}) gin.HandlerFunc {
 
 		// Response with the given requested object
 		body := response.New()
-		body.AddContent(modelName, reqObj)
+		body.AddContent(refutils.ModelName(model), reqObj)
 
 		c.JSON(200, body)
 		return

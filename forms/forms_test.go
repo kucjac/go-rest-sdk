@@ -80,7 +80,7 @@ func TestMapForm(t *testing.T) {
 				"emptybool":    {""},
 			}
 			Convey("Using policy that throws errors", func() {
-				policy := &FormPolicy{FailOnError: true, Tag: "form"}
+				policy := &Policy{FailOnError: true, Tag: "form"}
 
 				Convey("mapForm function match all fields within that struct", func() {
 					err := mapForm(mapTestObj, correct, policy)
@@ -109,7 +109,7 @@ func TestMapForm(t *testing.T) {
 			})
 		})
 		Convey("Using policy that does throw errors", func() {
-			policy := &FormPolicy{FailOnError: true, Tag: "testing", TaggedOnly: true}
+			policy := &Policy{FailOnError: true, Tag: "testing", TaggedOnly: true}
 
 			Convey("Having a map containg one correct and one incorrect value", func() {
 				mapform := map[string][]string{
@@ -146,7 +146,7 @@ func TestMapForm(t *testing.T) {
 				}
 				Convey("Should throw error and not bind any value to it", func() {
 					mapTestObj4 := &mapTest{}
-					err := mapForm(mapTestObj4, mapform3, &FormPolicy{FailOnError: true})
+					err := mapForm(mapTestObj4, mapform3, &Policy{FailOnError: true})
 
 					So(mapTestObj4.Fooness.BarNess, ShouldBeZeroValue)
 					So(err, ShouldBeError)
@@ -162,7 +162,7 @@ func TestBindQuery(t *testing.T) {
 		req := httptest.NewRequest("POST", "/foo?bar=content", nil)
 
 		Convey("Using a policy with no tags", func() {
-			policy := &FormPolicy{TaggedOnly: false}
+			policy := &Policy{TaggedOnly: false}
 
 			Convey("Where the model is of type Foo", func() {
 				fooModel := &Foo{}
@@ -174,7 +174,7 @@ func TestBindQuery(t *testing.T) {
 		})
 
 		Convey("Providing no policy, the default would be set", func() {
-			var policy *FormPolicy = nil
+			var policy *Policy = nil
 
 			Convey("With the model of type Foo", func() {
 				fooModel := &Foo{}
@@ -189,7 +189,7 @@ func TestBindQuery(t *testing.T) {
 		req := httptest.NewRequest("POST", "/test?inttype=content", nil)
 
 		Convey("Using a policy that fails on error", func() {
-			policy := &FormPolicy{FailOnError: true}
+			policy := &Policy{FailOnError: true}
 
 			Convey("Binding to model of type Test", func() {
 				type Test struct {
@@ -211,7 +211,7 @@ func TestBindJSON(t *testing.T) {
 		req := httptest.NewRequest("POST", "/jsontype", strings.NewReader(`{"Bar":"barcontent"}`))
 
 		Convey("Using no policy", func() {
-			var policy *FormPolicy
+			var policy *Policy
 
 			Convey("BindJSON decodes the body into a model of type Foo", func() {
 				model := Foo{}
@@ -227,7 +227,7 @@ func TestBindJSON(t *testing.T) {
 		req := httptest.NewRequest("POST", "/jsonincorrect", strings.NewReader(`{"Bar":"nobrackets"`))
 
 		Convey("Using a policy with FailOnError", func() {
-			var policy *FormPolicy = &FormPolicy{FailOnError: true}
+			var policy *Policy = &Policy{FailOnError: true}
 
 			Convey("Decoding the json request will return error", func() {
 				model := Foo{}

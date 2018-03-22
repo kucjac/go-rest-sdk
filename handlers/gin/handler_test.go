@@ -11,9 +11,11 @@ import (
 	"github.com/kucjac/go-rest-sdk/response"
 	"github.com/kucjac/go-rest-sdk/resterrors"
 	. "github.com/smartystreets/goconvey/convey"
+	"github.com/stretchr/testify/mock"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -21,6 +23,11 @@ import (
 type Model struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
+}
+
+type ModelWithForm struct {
+	Model
+	Age int `json:"age" form:"age"`
 }
 
 type IncorrectModel struct {
@@ -37,7 +44,7 @@ func TestNew(t *testing.T) {
 			and error handler the correct json handler should be created`, func() {
 			repo := &mocks.MockRepository{}
 			errHandler := errhandler.New()
-			gjh1, err = New(repo, errHandler, nil)
+			gjh1, err = New(repo, errHandler)
 
 			So(err, ShouldBeNil)
 			So(gjh1, ShouldNotBeNil)
@@ -51,15 +58,15 @@ func TestNew(t *testing.T) {
 			var nilRepo repository.GenericRepository = nil
 			errHandler := errhandler.New()
 
-			gjh1, err = New(repo, nilErrHandler, nil)
+			gjh1, err = New(repo, nilErrHandler)
 			So(err, ShouldBeError)
 			So(gjh1, ShouldBeNil)
 
-			gjh2, err = New(nilRepo, errHandler, nil)
+			gjh2, err = New(nilRepo, errHandler)
 			So(err, ShouldBeError)
 			So(gjh2, ShouldBeNil)
 
-			gjh3, err = New(nilRepo, nilErrHandler, nil)
+			gjh3, err = New(nilRepo, nilErrHandler)
 			So(err, ShouldBeError)
 			So(gjh3, ShouldBeNil)
 
@@ -69,13 +76,12 @@ func TestNew(t *testing.T) {
 		Convey("The policy argument may be nil, in such a case the default policy would be used.", func() {
 			repo := &mocks.MockRepository{}
 			errHandler := errhandler.New()
-			var policy *forms.FormPolicy
+			var policy *forms.Policy
 
-			gjh1, err = New(repo, errHandler, policy)
+			gjh1, err = New(repo, errHandler)
+			gjh1.JSONPolicy = policy
 			So(err, ShouldBeNil)
 
-			So(gjh1.formPolicy, ShouldNotBeNil)
-			So(*gjh1.formPolicy, ShouldResemble, forms.DefaultFormPolicy)
 		})
 	})
 }
@@ -86,7 +92,7 @@ func TestCreate(t *testing.T) {
 		var gjh *GinJSONHandler
 		var errHandler *errhandler.ErrorHandler
 		var router *gin.Engine
-		var policy *forms.FormPolicy
+		var policy *forms.Policy
 		var body *response.Body
 		var req *http.Request
 		var rw *httptest.ResponseRecorder
@@ -99,10 +105,12 @@ func TestCreate(t *testing.T) {
 			errHandler = errhandler.New()
 
 			repo := &mocks.MockRepository{}
-			policy = &forms.FormPolicy{FailOnError: true}
+			policy = &forms.Policy{FailOnError: true}
 
-			gjh, err = New(repo, errHandler, policy)
+			gjh, err = New(repo, errHandler)
 			So(err, ShouldBeNil)
+
+			gjh.JSONPolicy = policy
 
 			router.POST("/model", gjh.Create(Model{}))
 
@@ -161,7 +169,72 @@ func TestCreate(t *testing.T) {
 				So(body.Errors, ShouldContain, resterr)
 			})
 
-			Convey(``, nil)
+			Convey(`Handling POST request of correct JSON form
+				when some unknown error occurs while using repository`, func() {
+
+				var dberr *dberrors.Error = &dberrors.Error{Title: "Unknown error"}
+				repo.On("Create", &Model{Name: "Bad error"}).Return(dberr)
+
+				req = httptest.NewRequest("POST", "/model",
+					strings.NewReader(`{"name": "Bad error"}`))
+				rw = httptest.NewRecorder()
+
+				router.ServeHTTP(rw, req)
+
+				body, err = readBody(rw)
+				So(err, ShouldBeNil)
+
+				So(body.Status, ShouldEqual, response.StatusError)
+				So(body.HttpStatus, ShouldEqual, 500)
+				So(body.Errors, ShouldContain, resterrors.ErrInternalError.New())
+				So(body.Content, ShouldBeEmpty)
+			})
+
+			Convey(`Handling POST request of correct JSON form
+				when some internal dberror occurs while using repository`, func() {
+				var dberr *dberrors.Error = dberrors.ErrInsufficientResources.New()
+				repo.On("Create", &Model{Name: "Internal Error"}).Return(dberr)
+
+				req = httptest.NewRequest("POST", "/model",
+					strings.NewReader(`{"name": "Internal Error"}`))
+				rw = httptest.NewRecorder()
+
+				router.ServeHTTP(rw, req)
+
+				body, err = readBody(rw)
+				So(err, ShouldBeNil)
+
+				So(body.Status, ShouldEqual, response.StatusError)
+				So(body.HttpStatus, ShouldEqual, 500)
+				So(body.Errors, ShouldContain, resterrors.ErrInternalError.New())
+				So(body.Content, ShouldBeEmpty)
+			})
+
+			FocusConvey(`Handling POST request of correct JSON with succesful creation`, func() {
+				correct := &Model{Name: "Correct Model"}
+				// the repo would add id = 1
+				repo.On("Create", correct).Return(nil).
+					Run(func(args mock.Arguments) { args[0].(*Model).ID = 1 })
+
+				req = httptest.NewRequest("POST", "/model",
+					strings.NewReader(`{"name": "Correct Model"}`))
+				rw = httptest.NewRecorder()
+
+				router.ServeHTTP(rw, req)
+
+				body, err = readBody(rw)
+				So(err, ShouldBeNil)
+
+				So(body.Status, ShouldEqual, response.StatusOk)
+				So(body.HttpStatus, ShouldEqual, 200)
+				So(body.Errors, ShouldBeEmpty)
+
+				modelFields, ok := body.Content["model"].(map[string]interface{})
+				So(ok, ShouldBeTrue)
+
+				So(modelFields["name"], ShouldEqual, correct.Name)
+				So(modelFields["id"], ShouldEqual, 1)
+			})
 		})
 	})
 }
@@ -173,22 +246,17 @@ func TestGet(t *testing.T) {
 		var gjh *GinJSONHandler
 		var errHandler *errhandler.ErrorHandler
 		var router *gin.Engine
-		var policy *forms.FormPolicy
 
 		Convey("Having a ginJSONHandler and some gin router", func() {
 			router = gin.New()
 			repo := &mocks.MockRepository{}
 			errHandler = errhandler.New()
+			gjh, err = New(repo, errHandler)
 
 			Convey("If parameter is named differently the handler would return response with http 500 error.", func() {
-				type GenericModel struct {
-					ID   int
-					Name string
-				}
-				gjh, err = New(repo, errHandler, policy)
-				So(err, ShouldBeNil)
 
-				router.GET("/incorrect/:model", gjh.Get(GenericModel{}))
+				So(err, ShouldBeNil)
+				router.GET("/incorrect/:model_id", gjh.Get(Model{}))
 
 				req := httptest.NewRequest("GET", "/incorrect/1", strings.NewReader(`{"name": "Generic Model"}`))
 				rw := httptest.NewRecorder()
@@ -208,11 +276,6 @@ func TestGet(t *testing.T) {
 			Convey(`If the model doesn't have ID field or doesn't implement 
 				IDSetter interface the method would return response with 500 error.`, func() {
 
-				mockrepo := &mocks.MockRepository{}
-
-				gjh, err = New(mockrepo, errHandler, policy)
-				So(err, ShouldBeNil)
-
 				router.GET("/correct/:incorrectmodel", gjh.Get(IncorrectModel{}))
 				req := httptest.NewRequest("GET", "/correct/1", strings.NewReader(`{"name": "No id model"}`))
 				rw := httptest.NewRecorder()
@@ -228,21 +291,19 @@ func TestGet(t *testing.T) {
 			})
 
 			Convey("While getting from repository an error is handled by errorHandler", func() {
-				mockRepo := &mocks.MockRepository{}
 
 				// Internal Error - not recognised
-				mockRepo.On("Get", &Model{ID: 50}).Return(nil,
+				repo.On("Get", &Model{ID: 50}).Return(nil,
 					&dberrors.Error{Title: "Should not exist",
 						Message: "I am not recognised by "},
 				)
 
 				// Internal Error - recognised
-				mockRepo.On("Get", &Model{ID: 51}).Return(nil, dberrors.ErrInternalError.New())
+				repo.On("Get", &Model{ID: 51}).Return(nil, dberrors.ErrInternalError.New())
 
 				// Client side error
-				mockRepo.On("Get", &Model{ID: 52}).Return(nil, dberrors.ErrNoResult.New())
+				repo.On("Get", &Model{ID: 52}).Return(nil, dberrors.ErrNoResult.New())
 
-				gjh, err := New(mockRepo, errHandler, policy)
 				So(err, ShouldBeNil)
 
 				router.GET("/errhandler/:model", gjh.Get(Model{}))
@@ -298,11 +359,9 @@ func TestGet(t *testing.T) {
 
 			Convey("If the given id entity exists the handler func would return it in the body->content->modelname", func() {
 
-				mockRepo := &mocks.MockRepository{}
 				mockedModel := &Model{ID: 1, Name: "First"}
-				mockRepo.On("Get", &Model{ID: 1}).Return(mockedModel, nil)
+				repo.On("Get", &Model{ID: 1}).Return(mockedModel, nil)
 
-				gjh, err = New(mockRepo, errHandler, policy)
 				So(err, ShouldBeNil)
 
 				router.GET("/correct/:model", gjh.Get(Model{}))
@@ -333,6 +392,164 @@ func TestGet(t *testing.T) {
 
 	})
 
+}
+
+func TestList(t *testing.T) {
+	Convey("Subject: List gin.Handlerfunc", t, func() {
+		var err error
+		var gjh *GinJSONHandler
+		var errHandler *errhandler.ErrorHandler
+		var router *gin.Engine
+		var repo *mocks.MockRepository = &mocks.MockRepository{}
+		var req *http.Request
+		var rw *httptest.ResponseRecorder
+
+		Convey("Having some GinJSONHandler and some gin.Router", func() {
+
+			errHandler = errhandler.New()
+			gjh, err = New(repo, errHandler)
+			So(err, ShouldBeNil)
+
+			policy := &forms.Policy{FailOnError: true, TaggedOnly: true, Tag: "form"}
+
+			router = gin.New()
+			router.GET("/models", gjh.New().WithQueryPolicy(policy).List(ModelWithForm{}))
+
+			Convey(`Handling the GET method with query policy`, func() {
+
+				req = httptest.NewRequest("GET", "/models?age=fine", nil)
+				rw = httptest.NewRecorder()
+
+				router.ServeHTTP(rw, req)
+
+				body, err := readBody(rw)
+				So(err, ShouldBeNil)
+
+				So(body.Status, ShouldEqual, response.StatusError)
+				So(body.HttpStatus, ShouldEqual, 400)
+				So(body.Errors[0].Compare(resterrors.ErrInvalidQueryParameter), ShouldBeTrue)
+				So(body.Content, ShouldBeEmpty)
+			})
+
+			router.GET("/parametrized/models",
+				gjh.New().WithParamPolicy(policy).List(Model{}))
+
+			Convey(`Handling the GET method request on '/parametrized/models', 
+				with parameters policy in GinJSONHandler and incorrect 
+				parameters in url Query`, func() {
+
+				req = httptest.NewRequest("GET", "/parametrized/models?ids=incorrect,3,4", nil)
+				rw = httptest.NewRecorder()
+
+				router.ServeHTTP(rw, req)
+
+				body, err := readBody(rw)
+				So(err, ShouldBeNil)
+
+				So(body.Status, ShouldEqual, response.StatusError)
+				So(body.HttpStatus, ShouldEqual, 400)
+				So(body.Errors[0].Compare(resterrors.ErrInvalidQueryParameter), ShouldBeTrue)
+				So(body.Content, ShouldBeNil)
+			})
+
+			Convey(`Handling the GET method request on '/parametrized/models'
+				with parameters policy and correct url query parameters`, func() {
+				var mockModels []*Model = []*Model{
+					{ID: 1, Name: "First"},
+					{ID: 2, Name: "Second"},
+					{ID: 3, Name: "Third"},
+				}
+				repo.On("ListWithParams", &Model{}, &repository.ListParameters{IDs: []int{1, 2, 3}}).Return(mockModels, nil)
+				req = httptest.NewRequest("GET", "/parametrized/models?ids=1&ids=2&ids=3", nil)
+				rw = httptest.NewRecorder()
+
+				router.ServeHTTP(rw, req)
+
+				body, err := readBody(rw)
+				So(err, ShouldBeNil)
+
+				So(body.Status, ShouldEqual, response.StatusOk)
+				So(body.HttpStatus, ShouldEqual, 200)
+				So(body.Errors, ShouldBeEmpty)
+
+				var models []*Model
+
+				modelJson, err := json.Marshal(body.Content["models"])
+				So(err, ShouldBeNil)
+				err = json.Unmarshal(modelJson, &models)
+				So(err, ShouldBeNil)
+
+				So(models, ShouldResemble, mockModels)
+			})
+
+			router.GET("/errored/models", gjh.WithQueryPolicy(&forms.Policy{TaggedOnly: false}).List(Model{}))
+			Convey(`Having GET method request on '/errored/models'`, func() {
+				Convey("When some clientside dberror occurs", func() {
+					dbErr := dberrors.ErrNoResult.New()
+					repo.On("List", &Model{Name: "Marcin"}).Return(nil, dbErr)
+
+					restErr, _ := errHandler.Handle(dbErr)
+
+					req = httptest.NewRequest("GET", "/errored/models?name=Marcin", nil)
+					rw = httptest.NewRecorder()
+
+					router.ServeHTTP(rw, req)
+
+					body, err := readBody(rw)
+					So(err, ShouldBeNil)
+
+					So(body.Status, ShouldEqual, response.StatusError)
+					So(body.HttpStatus, ShouldEqual, 400)
+					So(body.Errors[0].Compare(*restErr), ShouldBeTrue)
+					So(body.Content, ShouldBeEmpty)
+				})
+				Convey("When some Internal error occurs", func() {
+					dbErr := dberrors.ErrInternalError.New()
+					repo.On("List", &Model{Name: "Some Internal Error"}).Return(nil, dbErr)
+
+					restErr, _ := errHandler.Handle(dbErr)
+
+					req = httptest.NewRequest("GET", "/errored/models?name="+url.QueryEscape("Some Internal Error"), nil)
+
+					rw = httptest.NewRecorder()
+
+					router.ServeHTTP(rw, req)
+
+					body, err := readBody(rw)
+					So(err, ShouldBeNil)
+
+					So(body.Status, ShouldEqual, response.StatusError)
+					So(body.HttpStatus, ShouldEqual, 500)
+					So(body.Errors, ShouldNotBeEmpty)
+					So(body.Errors[0].Compare(*restErr), ShouldBeTrue)
+					So(body.Content, ShouldBeNil)
+				})
+				Convey("When some unknown error occurs while handling error", func() {
+					repo.On("List", &Model{Name: "Unknown error"}).Return(nil, &dberrors.Error{
+						Message: "Unspecified and unknown error"})
+
+					req = httptest.NewRequest("GET",
+						"/errored/models?name="+url.QueryEscape("Unknown error"),
+						nil,
+					)
+					rw = httptest.NewRecorder()
+
+					router.ServeHTTP(rw, req)
+
+					body, err := readBody(rw)
+					So(err, ShouldBeNil)
+
+					So(body.Status, ShouldEqual, response.StatusError)
+					So(body.HttpStatus, ShouldEqual, 500)
+					So(body.Errors, ShouldNotBeEmpty)
+					So(body.Errors[0].Compare(resterrors.ErrInternalError), ShouldBeTrue)
+					So(body.Content, ShouldBeEmpty)
+				})
+
+			})
+		})
+
+	})
 }
 
 func readBody(rw *httptest.ResponseRecorder) (body *response.Body, err error) {

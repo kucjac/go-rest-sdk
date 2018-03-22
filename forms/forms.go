@@ -15,14 +15,14 @@ var (
 	ErrIncorrectModel = errors.New("Given model do not have ID field. In order to set ID, it should implement IDSetter or contain field ID")
 )
 
-type FormPolicy struct {
+type Policy struct {
 	TaggedOnly  bool
 	FailOnError bool
 	Tag         string
 }
 
 var (
-	DefaultFormPolicy = FormPolicy{
+	DefaultPolicy = Policy{
 		TaggedOnly:  false,
 		FailOnError: false,
 		Tag:         "form",
@@ -35,9 +35,9 @@ type IDSetter interface {
 
 // BindQuery binds the url Query
 // for the given request to the provided model
-func BindQuery(req *http.Request, model interface{}, policy *FormPolicy) error {
+func BindQuery(req *http.Request, model interface{}, policy *Policy) error {
 	if policy == nil {
-		policy = &DefaultFormPolicy
+		policy = &DefaultPolicy
 	}
 	values := req.URL.Query()
 	err := mapForm(model, values, policy)
@@ -47,14 +47,14 @@ func BindQuery(req *http.Request, model interface{}, policy *FormPolicy) error {
 	return nil
 }
 
-func BindParams(parameters map[string][]string, model interface{}, policy *FormPolicy) error {
+func BindParams(parameters map[string][]string, model interface{}, policy *Policy) error {
 	return nil
 }
 
 // BindJSON binds the request body and decode it into provided model
-func BindJSON(req *http.Request, model interface{}, policy *FormPolicy) error {
+func BindJSON(req *http.Request, model interface{}, policy *Policy) error {
 	if policy == nil {
-		policy = &DefaultFormPolicy
+		policy = &DefaultPolicy
 	}
 	decoder := json.NewDecoder(req.Body)
 	err := decoder.Decode(model)
@@ -103,7 +103,7 @@ func SetID(model interface{}, id string) error {
 	return ErrIncorrectModel
 }
 
-func mapForm(ptr interface{}, form map[string][]string, policy *FormPolicy) error {
+func mapForm(ptr interface{}, form map[string][]string, policy *Policy) error {
 	// Get type of pointer
 	t := reflect.TypeOf(ptr).Elem()
 
