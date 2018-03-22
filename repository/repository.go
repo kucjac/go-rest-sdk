@@ -38,7 +38,7 @@ type GenericRepository interface {
 	// Update creates new entity
 	Update(req interface{}) (err *dberrors.Error)
 
-	// Patch updates only selected fields in the 'what' object
+	// Patch updates only selected fields in the 'req' object
 	// selected from 'where' object
 	// if where is nil object then all records for given table would be patched.
 	Patch(req, where interface{}) (err *dberrors.Error)

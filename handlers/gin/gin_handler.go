@@ -19,8 +19,28 @@ type GinJSONHandler struct {
 	errHandler *errhandler.ErrorHandler
 }
 
+// Create returns gin.handlerFunc that for given 'model' creates new entity
+// on the base of the request json body.
+//
 func (g *GinJSONHandler) Create(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		contentHeader := c.GetHeader("Content-type")
+		allowedContentType := map[string]bool{
+			"application/json":         true,
+			"application/json-p":       true,
+			"application/x-javascript": true,
+			"application/javascript":   true,
+		}
+
+		if !allowedContentType[contentHeader] {
+			restErr := resterrors.ErrMissingRequiredHeader.New()
+			restErr.AddDetailInfo(`Header 'Content-type' must be set with the on of the following
+				values: 'application/json', 'application/json-p', 'application/javascript',
+				'application/x-javascript'`)
+			c.JSON(400, response.NewWithError(400, restErr))
+			return
+		}
+
 		obj := refutils.ObjOfPtrType(model)
 		err := forms.BindJSON(c.Request, obj, &forms.FormPolicy{FailOnError: true})
 		if err != nil {
@@ -50,7 +70,7 @@ func (g *GinJSONHandler) Create(model interface{}) gin.HandlerFunc {
 
 		body := response.New()
 		body.AddContent(refutils.StructName(obj), obj)
-		c.JSON(200, body)
+		c.JSON(201, body)
 	}
 }
 
@@ -167,19 +187,181 @@ func (g *GinJSONHandler) List(model interface{}) gin.HandlerFunc {
 
 func (g *GinJSONHandler) Update(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Get model name
+		modelName := refutils.StructName(model)
 
+		// modelID should be a url parameter as a ''
+		modelID := c.Param(modelName + "_id")
+		if modelID == "" {
+			c.JSON(400, response.NewWithError(400, resterrors.ErrInvalidURI.New()))
+			return
+		}
+
+		reqObj := refutils.ObjOfPtrType(model)
+
+		// BindJSON from the request
+		err := forms.BindJSON(c.Request, reqObj, nil)
+		if err != nil {
+			restErr := resterrors.ErrInvalidJSONDocument.New()
+			restErr.AddDetailInfo(err.Error())
+			c.JSON(400, response.NewWithError(400, restErr))
+			return
+		}
+
+		// SetID for given model
+		err = forms.SetID(reqObj, modelID)
+		if err != nil {
+			restErr := resterrors.ErrInternalError.New()
+			c.JSON(500, response.NewWithError(500, restErr))
+			return
+		}
+
+		dbErr := g.repo.Update(reqObj)
+		if dbErr != nil {
+			var isInternal bool
+			restErr, err := g.errHandler.Handle(dbErr)
+			if err != nil {
+				isInternal = true
+				restErr = resterrors.ErrInternalError.New()
+			}
+
+			if !isInternal {
+				if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
+					c.JSON(400, response.NewWithError(400, restErr))
+					return
+				}
+			}
+			c.JSON(500, response.NewWithError(500, restErr))
+			return
+		}
+
+		// Response with the given requested object
+		body := response.New()
+		body.AddContent(modelName, reqObj)
+
+		c.JSON(200, body)
+		return
 	}
 }
 
 func (g *GinJSONHandler) Patch(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Get model name
+		modelName := refutils.StructName(model)
 
+		// modelID should be a url parameter as a ''
+		modelID := c.Param(modelName + "_id")
+		if modelID == "" {
+			c.JSON(400, response.NewWithError(400, resterrors.ErrInvalidURI.New()))
+			return
+		}
+
+		reqObj := refutils.ObjOfPtrType(model)
+
+		// BindJSON from the request
+		err := forms.BindJSON(c.Request, reqObj, nil)
+		if err != nil {
+			restErr := resterrors.ErrInvalidJSONDocument.New()
+			restErr.AddDetailInfo(err.Error())
+			c.JSON(400, response.NewWithError(400, restErr))
+			return
+		}
+
+		whereObj := refutils.ObjOfPtrType(model)
+
+		// SetID for given whereObj
+		err = forms.SetID(whereObj, modelID)
+		if err != nil {
+			restErr := resterrors.ErrInternalError.New()
+			c.JSON(500, response.NewWithError(500, restErr))
+			return
+		}
+
+		dbErr := g.repo.Patch(reqObj, whereObj)
+		if dbErr != nil {
+			var isInternal bool
+			restErr, err := g.errHandler.Handle(dbErr)
+			if err != nil {
+				isInternal = true
+				restErr = resterrors.ErrInternalError.New()
+			}
+
+			if !isInternal {
+				if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
+					c.JSON(400, response.NewWithError(400, restErr))
+					return
+				}
+			}
+			c.JSON(500, response.NewWithError(500, restErr))
+			return
+		}
+
+		// Response with the given requested object
+		body := response.New()
+		body.AddContent(modelName, reqObj)
+
+		c.JSON(200, body)
+		return
 	}
 }
 
 func (g *GinJSONHandler) Delete(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Get model name
+		modelName := refutils.StructName(model)
 
+		// modelID should be a url parameter as a ''
+		modelID := c.Param(modelName + "_id")
+		if modelID == "" {
+			c.JSON(400, response.NewWithError(400, resterrors.ErrInvalidURI.New()))
+			return
+		}
+
+		reqObj := refutils.ObjOfPtrType(model)
+
+		// BindJSON from the request
+		err := forms.BindJSON(c.Request, reqObj, nil)
+		if err != nil {
+			restErr := resterrors.ErrInvalidJSONDocument.New()
+			restErr.AddDetailInfo(err.Error())
+			c.JSON(400, response.NewWithError(400, restErr))
+			return
+		}
+
+		whereObj := refutils.ObjOfPtrType(model)
+
+		// SetID for given whereObj
+		err = forms.SetID(whereObj, modelID)
+		if err != nil {
+			restErr := resterrors.ErrInternalError.New()
+			c.JSON(500, response.NewWithError(500, restErr))
+			return
+		}
+
+		dbErr := g.repo.Delete(reqObj, whereObj)
+		if dbErr != nil {
+			var isInternal bool
+			restErr, err := g.errHandler.Handle(dbErr)
+			if err != nil {
+				isInternal = true
+				restErr = resterrors.ErrInternalError.New()
+			}
+
+			if !isInternal {
+				if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
+					c.JSON(400, response.NewWithError(400, restErr))
+					return
+				}
+			}
+			c.JSON(500, response.NewWithError(500, restErr))
+			return
+		}
+
+		// Response with the given requested object
+		body := response.New()
+
+		c.JSON(204, body)
+		return
 	}
 }
 
