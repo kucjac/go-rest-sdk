@@ -1,5 +1,9 @@
 package response
 
+import (
+	"github.com/kucjac/go-rest-sdk/resterrors"
+)
+
 // Body - basic REST API response structure
 // Created on purpose of easily managable and
 type Body struct {
@@ -21,7 +25,7 @@ type Body struct {
 	// Errors - list of errors that occurred
 	// The server MAY choose to stop processing as soon as a problem is encountered, or it
 	// MAY continue processing and encounter multiple problems.
-	Errors []error `json:"errors,omitempty"`
+	Errors []*resterrors.Error `json:"errors,omitempty"`
 
 	// Content contains all response results
 	// Composed as a map[string]interface{}
@@ -37,7 +41,7 @@ func (r *Body) AddContent(key string, result interface{}) {
 }
 
 // AddErrors adds an error for the given response body.
-func (r *Body) AddErrors(err ...error) {
+func (r *Body) AddErrors(err ...*resterrors.Error) {
 	r.Errors = append(r.Errors, err...)
 }
 
@@ -56,7 +60,7 @@ func New() *Body {
 // NewWithError prepares Body with Status: 'StatusError'
 // The function takes httpStatus as a first argument. Whereas it can take any int
 // it is not a good practice. Multiple errors are allow as the remaining arguments.
-func NewWithError(httpStatus int, errors ...error) *Body {
+func NewWithError(httpStatus int, errors ...*resterrors.Error) *Body {
 	response := &Body{
 		Status:     StatusError,
 		HttpStatus: httpStatus,

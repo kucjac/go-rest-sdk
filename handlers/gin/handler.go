@@ -1,6 +1,7 @@
 package ginhandler
 
 import (
+	"errors"
 	"github.com/gin-gonic/gin"
 	"github.com/jinzhu/inflection"
 	"github.com/kucjac/go-rest-sdk/dberrors"
@@ -11,38 +12,42 @@ import (
 	"github.com/kucjac/go-rest-sdk/response"
 	"github.com/kucjac/go-rest-sdk/resterrors"
 	"log"
+	"strings"
 )
 
 // GinJSONHandler
 type GinJSONHandler struct {
 	repo       repository.GenericRepository
 	errHandler *errhandler.ErrorHandler
+	formPolicy *forms.FormPolicy
+}
+
+// New creates GinJSONHandler for given
+func New(repo repository.GenericRepository,
+	errHandler *errhandler.ErrorHandler,
+	policy *forms.FormPolicy,
+) (*GinJSONHandler, error) {
+	if repo == nil || errHandler == nil {
+		return nil, errors.New("repository and errorHandler cannot be nil.")
+	}
+	if policy == nil {
+		policy = &forms.DefaultFormPolicy
+	}
+	ginHandler := &GinJSONHandler{
+		repo:       repo,
+		errHandler: errHandler,
+		formPolicy: policy,
+	}
+	return ginHandler, nil
 }
 
 // Create returns gin.handlerFunc that for given 'model' creates new entity
 // on the base of the request json body.
-//
 func (g *GinJSONHandler) Create(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		contentHeader := c.GetHeader("Content-type")
-		allowedContentType := map[string]bool{
-			"application/json":         true,
-			"application/json-p":       true,
-			"application/x-javascript": true,
-			"application/javascript":   true,
-		}
-
-		if !allowedContentType[contentHeader] {
-			restErr := resterrors.ErrMissingRequiredHeader.New()
-			restErr.AddDetailInfo(`Header 'Content-type' must be set with the on of the following
-				values: 'application/json', 'application/json-p', 'application/javascript',
-				'application/x-javascript'`)
-			c.JSON(400, response.NewWithError(400, restErr))
-			return
-		}
 
 		obj := refutils.ObjOfPtrType(model)
-		err := forms.BindJSON(c.Request, obj, &forms.FormPolicy{FailOnError: true})
+		err := forms.BindJSON(c.Request, obj, g.formPolicy)
 		if err != nil {
 			resErr := resterrors.ErrInvalidJSONDocument.New()
 			resErr.AddDetailInfo(err.Error())
@@ -56,11 +61,13 @@ func (g *GinJSONHandler) Create(model interface{}) gin.HandlerFunc {
 		if dberr != nil {
 			rErr, err := g.errHandler.Handle(dberr)
 			if err != nil {
+				c.Error(err)
 				c.JSON(500, response.NewWithError(500, resterrors.ErrInternalError.New()))
 				return
 			}
 			isInternal := rErr.Compare(resterrors.ErrInternalError)
 			if isInternal {
+				c.Error(err)
 				c.JSON(500, response.NewWithError(500, rErr))
 			} else {
 				c.JSON(400, response.NewWithError(400, rErr))
@@ -80,12 +87,12 @@ func (g *GinJSONHandler) Create(model interface{}) gin.HandlerFunc {
 func (g *GinJSONHandler) Get(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Get model name
-		modelName := refutils.StructName(model)
+		modelName := strings.ToLower(refutils.StructName(model))
 
 		// modelID should be a url parameter as a ''
-		modelID := c.Param(modelName + "_id")
+		modelID := c.Param(modelName)
 		if modelID == "" {
-			c.JSON(400, response.NewWithError(400, resterrors.ErrInvalidURI.New()))
+			c.JSON(500, response.NewWithError(500, resterrors.ErrInternalError.New()))
 			return
 		}
 
@@ -95,6 +102,7 @@ func (g *GinJSONHandler) Get(model interface{}) gin.HandlerFunc {
 		// Set the model ID
 		err := forms.SetID(obj, modelID)
 		if err != nil {
+			c.Error(err)
 			c.JSON(500, response.NewWithError(500, resterrors.ErrInternalError.New()))
 			return
 		}
@@ -106,6 +114,7 @@ func (g *GinJSONHandler) Get(model interface{}) gin.HandlerFunc {
 			// Handle the error
 			restErr, err := g.errHandler.Handle(dberr)
 			if err != nil {
+				c.Error(err)
 				isInternal = true
 				restErr = resterrors.ErrInternalError.New()
 			}
@@ -173,6 +182,7 @@ func (g *GinJSONHandler) List(model interface{}) gin.HandlerFunc {
 					return
 				}
 			}
+			c.Error(err)
 			c.JSON(500, response.NewWithError(500, restErr))
 			return
 		}
@@ -191,7 +201,7 @@ func (g *GinJSONHandler) Update(model interface{}) gin.HandlerFunc {
 		modelName := refutils.StructName(model)
 
 		// modelID should be a url parameter as a ''
-		modelID := c.Param(modelName + "_id")
+		modelID := c.Param(modelName)
 		if modelID == "" {
 			c.JSON(400, response.NewWithError(400, resterrors.ErrInvalidURI.New()))
 			return
@@ -211,6 +221,7 @@ func (g *GinJSONHandler) Update(model interface{}) gin.HandlerFunc {
 		// SetID for given model
 		err = forms.SetID(reqObj, modelID)
 		if err != nil {
+			c.Error(err)
 			restErr := resterrors.ErrInternalError.New()
 			c.JSON(500, response.NewWithError(500, restErr))
 			return
@@ -231,6 +242,7 @@ func (g *GinJSONHandler) Update(model interface{}) gin.HandlerFunc {
 					return
 				}
 			}
+			c.Error(err)
 			c.JSON(500, response.NewWithError(500, restErr))
 			return
 		}
@@ -250,7 +262,7 @@ func (g *GinJSONHandler) Patch(model interface{}) gin.HandlerFunc {
 		modelName := refutils.StructName(model)
 
 		// modelID should be a url parameter as a ''
-		modelID := c.Param(modelName + "_id")
+		modelID := c.Param(modelName)
 		if modelID == "" {
 			c.JSON(400, response.NewWithError(400, resterrors.ErrInvalidURI.New()))
 			return
@@ -272,6 +284,7 @@ func (g *GinJSONHandler) Patch(model interface{}) gin.HandlerFunc {
 		// SetID for given whereObj
 		err = forms.SetID(whereObj, modelID)
 		if err != nil {
+			c.Error(err)
 			restErr := resterrors.ErrInternalError.New()
 			c.JSON(500, response.NewWithError(500, restErr))
 			return
@@ -292,6 +305,7 @@ func (g *GinJSONHandler) Patch(model interface{}) gin.HandlerFunc {
 					return
 				}
 			}
+			c.Error(err)
 			c.JSON(500, response.NewWithError(500, restErr))
 			return
 		}
@@ -311,7 +325,7 @@ func (g *GinJSONHandler) Delete(model interface{}) gin.HandlerFunc {
 		modelName := refutils.StructName(model)
 
 		// modelID should be a url parameter as a ''
-		modelID := c.Param(modelName + "_id")
+		modelID := c.Param(modelName)
 		if modelID == "" {
 			c.JSON(400, response.NewWithError(400, resterrors.ErrInvalidURI.New()))
 			return
@@ -333,6 +347,7 @@ func (g *GinJSONHandler) Delete(model interface{}) gin.HandlerFunc {
 		// SetID for given whereObj
 		err = forms.SetID(whereObj, modelID)
 		if err != nil {
+			c.Error(err)
 			restErr := resterrors.ErrInternalError.New()
 			c.JSON(500, response.NewWithError(500, restErr))
 			return
@@ -353,13 +368,13 @@ func (g *GinJSONHandler) Delete(model interface{}) gin.HandlerFunc {
 					return
 				}
 			}
+			c.Error(err)
 			c.JSON(500, response.NewWithError(500, restErr))
 			return
 		}
 
 		// Response with the given requested object
 		body := response.New()
-
 		c.JSON(204, body)
 		return
 	}

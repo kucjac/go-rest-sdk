@@ -2,6 +2,7 @@ package response
 
 import (
 	"errors"
+	"github.com/kucjac/go-rest-sdk/resterrors"
 	. "github.com/smartystreets/goconvey/convey"
 	"net/http"
 	"testing"
@@ -31,7 +32,7 @@ func TestNew(t *testing.T) {
 
 func TestNewWithError(t *testing.T) {
 	Convey("While processing something, an error occured", t, func() {
-		err := errors.New("Some error")
+		err := &resterrors.Error{Title: "Some error"}
 		Convey("The error is of http type 400 - Bad Request", func() {
 			httpStatus := http.StatusBadRequest
 
@@ -51,8 +52,8 @@ func TestBodyAddErrors(t *testing.T) {
 		res := NewWithError(400)
 
 		Convey("There occured some errors", func() {
-			err1 := errors.New("Some error 1")
-			err2 := errors.New("Some error 2")
+			err1 := &resterrors.Error{Title: "Some error 1"}
+			err2 := &resterrors.Error{Title: "Some error 2"}
 			Convey("Adding them to response", func() {
 				res.AddErrors(err1, err2)
 

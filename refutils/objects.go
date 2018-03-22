@@ -1,7 +1,9 @@
 package refutils
 
 import (
+	"github.com/jinzhu/inflection"
 	"reflect"
+	"strings"
 )
 
 func ObjsOfTheSameType(first interface{}, second interface{}) bool {
@@ -61,6 +63,27 @@ func SliceOfType(req interface{}) (res interface{}) {
 func StructName(model interface{}) string {
 	t := getType(model)
 	return t.Name()
+}
+
+// ModelName returns lowercase model name.
+// If provided model is of slice type then
+// model name would be pluralized.
+// i.e.
+//	- Model would return 'model'
+// 	- []Model would return 'models'
+func ModelName(model interface{}) string {
+	var plural bool
+	t := reflect.TypeOf(model)
+
+	if t.Kind() == reflect.Slice {
+		plural = true
+	}
+	t = getType(model)
+	name := strings.ToLower(t.Name())
+	if plural {
+		name = inflection.Plural(name)
+	}
+	return name
 }
 
 // GetType returns the type of the 'req' source object.
