@@ -36,15 +36,15 @@ type IncorrectModel struct {
 
 func TestNew(t *testing.T) {
 
-	Convey("Subject: New GinJSONHandler", t, func() {
+	Convey("Subject: New JSONHandler", t, func() {
 		var err error
-		var gjh1, gjh2, gjh3 *GinJSONHandler
+		var gjh1, gjh2, gjh3 *JSONHandler
 
 		Convey(`Having some repository that implements repository.GenericRepository 
 			and error handler the correct json handler should be created`, func() {
 			repo := &mocks.MockRepository{}
 			errHandler := errhandler.New()
-			gjh1, err = New(repo, errHandler)
+			gjh1, err = New(repo, errHandler, nil)
 
 			So(err, ShouldBeNil)
 			So(gjh1, ShouldNotBeNil)
@@ -58,42 +58,59 @@ func TestNew(t *testing.T) {
 			var nilRepo repository.GenericRepository = nil
 			errHandler := errhandler.New()
 
-			gjh1, err = New(repo, nilErrHandler)
+			gjh1, err = New(repo, nilErrHandler, nil)
 			So(err, ShouldBeError)
 			So(gjh1, ShouldBeNil)
 
-			gjh2, err = New(nilRepo, errHandler)
+			gjh2, err = New(nilRepo, errHandler, nil)
 			So(err, ShouldBeError)
 			So(gjh2, ShouldBeNil)
 
-			gjh3, err = New(nilRepo, nilErrHandler)
+			gjh3, err = New(nilRepo, nilErrHandler, nil)
 			So(err, ShouldBeError)
 			So(gjh3, ShouldBeNil)
 
 			gjh1, gjh2, gjh3 = nil, nil, nil
 		})
 
-		Convey("The policy argument may be nil, in such a case the default policy would be used.", func() {
+		Convey("The responseBody argument may be nil, in such a case the default *DefaultBody would be used.", func() {
 			repo := &mocks.MockRepository{}
 			errHandler := errhandler.New()
-			var policy *forms.Policy
+			var body response.Responser
 
-			gjh1, err = New(repo, errHandler)
-			gjh1.JSONPolicy = policy
+			gjh1, err = New(repo, errHandler, body)
 			So(err, ShouldBeNil)
+
+			So(gjh1.responseBody, ShouldHaveSameTypeAs, &response.DefaultBody{})
 
 		})
 	})
 }
 
-func TestCreate(t *testing.T) {
+func TestWithResponseBody(t *testing.T) {
+	Convey("Subject: Setting responseBody with callback method WithResponseBody", t, func() {
+		Convey("Having some JSONHandler with default responseBody", func() {
+			handler, _ := New(&mocks.MockRepository{}, errhandler.New(), nil)
+
+			So(handler.responseBody, ShouldResemble, &response.DefaultBody{})
+			Convey(`Using WithResponseBody() method sets the responseBody as in the argument and returns given handler as callback`, func() {
+				callbacked := handler.WithResponseBody(&response.DetailedBody{})
+
+				So(callbacked, ShouldEqual, handler)
+				So(callbacked.responseBody, ShouldResemble, &response.DetailedBody{})
+			})
+		})
+	})
+}
+
+func TestCreateHandlerfunc(t *testing.T) {
 	Convey("Subject: Create gin.Handlerfunc", t, func() {
 		var err error
-		var gjh *GinJSONHandler
+		var gjh *JSONHandler
 		var errHandler *errhandler.ErrorHandler
 		var router *gin.Engine
 		var policy *forms.Policy
-		var body *response.Body
+		var body *response.DefaultBody
 		var req *http.Request
 		var rw *httptest.ResponseRecorder
 		gin.SetMode(gin.TestMode)
@@ -107,10 +124,10 @@ func TestCreate(t *testing.T) {
 			repo := &mocks.MockRepository{}
 			policy = &forms.Policy{FailOnError: true}
 
-			gjh, err = New(repo, errHandler)
+			gjh, err = New(repo, errHandler, nil)
 			So(err, ShouldBeNil)
 
-			gjh.JSONPolicy = policy
+			gjh.jsonPolicy = policy
 
 			router.POST("/model", gjh.Create(Model{}))
 
@@ -124,9 +141,7 @@ func TestCreate(t *testing.T) {
 				body, err = readBody(rw)
 				So(err, ShouldBeNil)
 
-				So(body.Status, ShouldEqual, response.StatusError)
-				So(body.HttpStatus, ShouldEqual, 400)
-				// So(body.Errors, ShouldContain, resterrors.ErrInvalidJSONDocument.New())
+				So(body.Errors, ShouldNotBeEmpty)
 				So(body.Content, ShouldBeEmpty)
 
 				incorrectJSON := strings.NewReader(`{"id":1`)
@@ -137,15 +152,13 @@ func TestCreate(t *testing.T) {
 				body, err = readBody(rw)
 				So(err, ShouldBeNil)
 
-				So(body.Status, ShouldEqual, response.StatusError)
-				So(body.HttpStatus, ShouldEqual, 400)
-				for _, restErr := range body.Errors {
-					So(restErr.Compare(resterrors.ErrInvalidJSONDocument), ShouldBeTrue)
-				}
+				So(rw.Code, ShouldEqual, 400)
+				So(body.Errors[0].Compare(resterrors.ErrInvalidJSONDocument), ShouldBeTrue)
+
 				So(body.Content, ShouldBeEmpty)
 			})
 
-			Convey(`Handling POST request of correct JSON form 
+			Convey(`Handling POST request of correct JSON form
 				where some clientside error occurs while connecting repository`, func() {
 				var dberr *dberrors.Error = dberrors.ErrUniqueViolation.New()
 				repo.On("Create", &Model{Name: "Duplicated"}).Return(dberr)
@@ -159,9 +172,6 @@ func TestCreate(t *testing.T) {
 
 				body, err = readBody(rw)
 				So(err, ShouldBeNil)
-
-				So(body.Status, ShouldEqual, response.StatusError)
-				So(body.HttpStatus, ShouldEqual, 400)
 
 				resterr, err := errHandler.Handle(dberr)
 				So(err, ShouldBeNil)
@@ -184,8 +194,6 @@ func TestCreate(t *testing.T) {
 				body, err = readBody(rw)
 				So(err, ShouldBeNil)
 
-				So(body.Status, ShouldEqual, response.StatusError)
-				So(body.HttpStatus, ShouldEqual, 500)
 				So(body.Errors, ShouldContain, resterrors.ErrInternalError.New())
 				So(body.Content, ShouldBeEmpty)
 			})
@@ -204,8 +212,6 @@ func TestCreate(t *testing.T) {
 				body, err = readBody(rw)
 				So(err, ShouldBeNil)
 
-				So(body.Status, ShouldEqual, response.StatusError)
-				So(body.HttpStatus, ShouldEqual, 500)
 				So(body.Errors, ShouldContain, resterrors.ErrInternalError.New())
 				So(body.Content, ShouldBeEmpty)
 			})
@@ -225,8 +231,6 @@ func TestCreate(t *testing.T) {
 				body, err = readBody(rw)
 				So(err, ShouldBeNil)
 
-				So(body.Status, ShouldEqual, response.StatusOk)
-				So(body.HttpStatus, ShouldEqual, 200)
 				So(body.Errors, ShouldBeEmpty)
 
 				modelFields, ok := body.Content["model"].(map[string]interface{})
@@ -239,11 +243,11 @@ func TestCreate(t *testing.T) {
 	})
 }
 
-func TestGet(t *testing.T) {
+func TestGetHandlerfunc(t *testing.T) {
 
 	Convey("Subject: Get gin.Handlerfunc", t, func() {
 		var err error
-		var gjh *GinJSONHandler
+		var gjh *JSONHandler
 		var errHandler *errhandler.ErrorHandler
 		var router *gin.Engine
 
@@ -251,11 +255,12 @@ func TestGet(t *testing.T) {
 			router = gin.New()
 			repo := &mocks.MockRepository{}
 			errHandler = errhandler.New()
-			gjh, err = New(repo, errHandler)
+
+			gjh, err = New(repo, errHandler, nil)
+			So(err, ShouldBeNil)
 
 			Convey("If parameter is named differently the handler would return response with http 500 error.", func() {
 
-				So(err, ShouldBeNil)
 				router.GET("/incorrect/:model_id", gjh.Get(Model{}))
 
 				req := httptest.NewRequest("GET", "/incorrect/1", strings.NewReader(`{"name": "Generic Model"}`))
@@ -263,17 +268,13 @@ func TestGet(t *testing.T) {
 
 				router.ServeHTTP(rw, req)
 
-				body := response.Body{}
-				rsp, err := ioutil.ReadAll(rw.Body)
+				body, err := readBody(rw)
 				So(err, ShouldBeNil)
 
-				err = json.Unmarshal(rsp, &body)
-				So(err, ShouldBeNil)
-
-				So(body.Status, ShouldEqual, response.StatusError)
 				So(body.Errors, ShouldContain, resterrors.ErrInternalError.New())
 			})
-			Convey(`If the model doesn't have ID field or doesn't implement 
+
+			Convey(`If the model doesn't have ID field or doesn't implement
 				IDSetter interface the method would return response with 500 error.`, func() {
 
 				router.GET("/correct/:incorrectmodel", gjh.Get(IncorrectModel{}))
@@ -285,7 +286,6 @@ func TestGet(t *testing.T) {
 				body, err := readBody(rw)
 				So(err, ShouldBeNil)
 
-				So(body.Status, ShouldEqual, response.StatusError)
 				So(body.Errors, ShouldContain, resterrors.ErrInternalError.New())
 
 			})
@@ -308,7 +308,7 @@ func TestGet(t *testing.T) {
 
 				router.GET("/errhandler/:model", gjh.Get(Model{}))
 
-				Convey(`The handler may return non response error 'error' 
+				Convey(`The handler may return non response error 'error'
 					that means some kind of internal server error`, func() {
 
 					req := httptest.NewRequest("GET", "/errhandler/50", nil)
@@ -319,7 +319,6 @@ func TestGet(t *testing.T) {
 					body, err := readBody(rw)
 					So(err, ShouldBeNil)
 
-					So(body.Status, ShouldEqual, response.StatusError)
 					So(body.Errors, ShouldContain, resterrors.ErrInternalError.New())
 				})
 
@@ -332,8 +331,6 @@ func TestGet(t *testing.T) {
 					body, err := readBody(rw)
 					So(err, ShouldBeNil)
 
-					So(body.Status, ShouldEqual, response.StatusError)
-					So(body.HttpStatus, ShouldEqual, 500)
 					So(body.Errors, ShouldContain, resterrors.ErrInternalError.New())
 					So(body.Content, ShouldBeEmpty)
 				})
@@ -346,9 +343,6 @@ func TestGet(t *testing.T) {
 
 					body, err := readBody(rw)
 					So(err, ShouldBeNil)
-
-					So(body.Status, ShouldEqual, response.StatusError)
-					So(body.HttpStatus, ShouldEqual, 400)
 
 					So(body.Errors, ShouldNotContain, resterrors.ErrInternalError.New())
 					So(body.Errors, ShouldContain, resterrors.ErrResourceNotFound.New())
@@ -373,7 +367,6 @@ func TestGet(t *testing.T) {
 				body, err := readBody(rw)
 				So(err, ShouldBeNil)
 
-				So(body.Status, ShouldEqual, response.StatusOk)
 				So(body.Errors, ShouldBeEmpty)
 
 				respModel, ok := body.Content["model"]
@@ -392,20 +385,20 @@ func TestGet(t *testing.T) {
 
 }
 
-func TestList(t *testing.T) {
+func TestListHandlerfunc(t *testing.T) {
 	Convey("Subject: List gin.Handlerfunc", t, func() {
 		var err error
-		var gjh *GinJSONHandler
+		var gjh *JSONHandler
 		var errHandler *errhandler.ErrorHandler
 		var router *gin.Engine
 		var repo *mocks.MockRepository = &mocks.MockRepository{}
 		var req *http.Request
 		var rw *httptest.ResponseRecorder
 
-		Convey("Having some GinJSONHandler and some gin.Router", func() {
+		Convey("Having some JSONHandler and some gin.Router", func() {
 
 			errHandler = errhandler.New()
-			gjh, err = New(repo, errHandler)
+			gjh, err = New(repo, errHandler, nil)
 			So(err, ShouldBeNil)
 
 			policy := &forms.Policy{FailOnError: true, TaggedOnly: true, Tag: "form"}
@@ -423,8 +416,6 @@ func TestList(t *testing.T) {
 				body, err := readBody(rw)
 				So(err, ShouldBeNil)
 
-				So(body.Status, ShouldEqual, response.StatusError)
-				So(body.HttpStatus, ShouldEqual, 400)
 				So(body.Errors[0].Compare(resterrors.ErrInvalidQueryParameter), ShouldBeTrue)
 				So(body.Content, ShouldBeEmpty)
 			})
@@ -432,8 +423,8 @@ func TestList(t *testing.T) {
 			router.GET("/parametrized/models",
 				gjh.New().WithParamPolicy(policy).List(Model{}))
 
-			Convey(`Handling the GET method request on '/parametrized/models', 
-				with parameters policy in GinJSONHandler and incorrect 
+			Convey(`Handling the GET method request on '/parametrized/models',
+				with parameters policy in JSONHandler and incorrect
 				parameters in url Query`, func() {
 
 				req = httptest.NewRequest("GET", "/parametrized/models?ids=incorrect,3,4", nil)
@@ -444,8 +435,6 @@ func TestList(t *testing.T) {
 				body, err := readBody(rw)
 				So(err, ShouldBeNil)
 
-				So(body.Status, ShouldEqual, response.StatusError)
-				So(body.HttpStatus, ShouldEqual, 400)
 				So(body.Errors[0].Compare(resterrors.ErrInvalidQueryParameter), ShouldBeTrue)
 				So(body.Content, ShouldBeNil)
 			})
@@ -466,8 +455,6 @@ func TestList(t *testing.T) {
 				body, err := readBody(rw)
 				So(err, ShouldBeNil)
 
-				So(body.Status, ShouldEqual, response.StatusOk)
-				So(body.HttpStatus, ShouldEqual, 200)
 				So(body.Errors, ShouldBeEmpty)
 
 				var models []*Model
@@ -496,8 +483,6 @@ func TestList(t *testing.T) {
 					body, err := readBody(rw)
 					So(err, ShouldBeNil)
 
-					So(body.Status, ShouldEqual, response.StatusError)
-					So(body.HttpStatus, ShouldEqual, 400)
 					So(body.Errors[0].Compare(*restErr), ShouldBeTrue)
 					So(body.Content, ShouldBeEmpty)
 				})
@@ -516,8 +501,6 @@ func TestList(t *testing.T) {
 					body, err := readBody(rw)
 					So(err, ShouldBeNil)
 
-					So(body.Status, ShouldEqual, response.StatusError)
-					So(body.HttpStatus, ShouldEqual, 500)
 					So(body.Errors, ShouldNotBeEmpty)
 					So(body.Errors[0].Compare(*restErr), ShouldBeTrue)
 					So(body.Content, ShouldBeNil)
@@ -537,8 +520,6 @@ func TestList(t *testing.T) {
 					body, err := readBody(rw)
 					So(err, ShouldBeNil)
 
-					So(body.Status, ShouldEqual, response.StatusError)
-					So(body.HttpStatus, ShouldEqual, 500)
 					So(body.Errors, ShouldNotBeEmpty)
 					So(body.Errors[0].Compare(resterrors.ErrInternalError), ShouldBeTrue)
 					So(body.Content, ShouldBeEmpty)
@@ -550,10 +531,10 @@ func TestList(t *testing.T) {
 	})
 }
 
-func TestUpdate(t *testing.T) {
-	Convey("Subject: GinJSONHandler Update method", t, func() {
+func TestUpdateHandlerfunc(t *testing.T) {
+	Convey("Subject: JSONHandler Update method", t, func() {
 		var err error
-		var gjh *GinJSONHandler
+		var gjh *JSONHandler
 		var errHandler *errhandler.ErrorHandler = errhandler.New()
 		var router *gin.Engine
 		var repo *mocks.MockRepository = &mocks.MockRepository{}
@@ -561,15 +542,15 @@ func TestUpdate(t *testing.T) {
 		var rw *httptest.ResponseRecorder
 		var policy *forms.Policy = &forms.Policy{FailOnError: true}
 
-		Convey("Having some gin.Router and GinJSONHandler", func() {
+		Convey("Having some gin.Router and JSONHandler", func() {
 			router = gin.New()
 
-			gjh, err = New(repo, errHandler)
+			gjh, err = New(repo, errHandler, nil)
 			So(err, ShouldBeNil)
 
 			Convey("Handling the request with method PUT on '/models/1'", func() {
 
-				Convey(`If invalid id parameter is provided in the router url, 
+				Convey(`If invalid id parameter is provided in the router url,
 					an internal error would be returned `, func() {
 					router.PUT("/incorrectid/:incorrectmodel_id", gjh.Update(Model{}))
 
@@ -581,8 +562,6 @@ func TestUpdate(t *testing.T) {
 					body, err := readBody(rw)
 					So(err, ShouldBeNil)
 
-					So(body.Status, ShouldEqual, response.StatusError)
-					So(body.HttpStatus, ShouldEqual, 500)
 					So(body.Errors[0].Compare(resterrors.ErrInternalError), ShouldBeTrue)
 					So(body.Content, ShouldBeEmpty)
 				})
@@ -600,8 +579,6 @@ func TestUpdate(t *testing.T) {
 					body, err := readBody(rw)
 					So(err, ShouldBeNil)
 
-					So(body.Status, ShouldEqual, response.StatusError)
-					So(body.HttpStatus, ShouldEqual, 400)
 					So(body.Errors[0].Compare(resterrors.ErrInvalidJSONDocument), ShouldBeTrue)
 					So(body.Content, ShouldBeEmpty)
 				})
@@ -619,8 +596,6 @@ func TestUpdate(t *testing.T) {
 					body, err := readBody(rw)
 					So(err, ShouldBeNil)
 
-					So(body.Status, ShouldEqual, response.StatusError)
-					So(body.HttpStatus, ShouldEqual, 500)
 					So(body.Errors[0].Compare(resterrors.ErrInternalError), ShouldBeTrue)
 					So(body.Content, ShouldBeEmpty)
 				})
@@ -640,13 +615,11 @@ func TestUpdate(t *testing.T) {
 						body, err := readBody(rw)
 						So(err, ShouldBeNil)
 
-						So(body.Status, ShouldEqual, response.StatusError)
-						So(body.HttpStatus, ShouldEqual, 500)
 						So(body.Errors[0].Compare(resterrors.ErrInternalError), ShouldBeTrue)
 						So(body.Content, ShouldBeEmpty)
 					})
 
-					Convey(`If an error was recognised as non Internal 
+					Convey(`If an error was recognised as non Internal
 						response should contain 400 code`, func() {
 
 						dbErr := dberrors.ErrIntegrConstViolation.New()
@@ -663,8 +636,6 @@ func TestUpdate(t *testing.T) {
 						body, err := readBody(rw)
 						So(err, ShouldBeNil)
 
-						So(body.Status, ShouldEqual, response.StatusError)
-						So(body.HttpStatus, ShouldEqual, 400)
 						So(body.Errors[0].Compare(*restErr), ShouldBeTrue)
 						So(body.Content, ShouldBeEmpty)
 					})
@@ -684,13 +655,11 @@ func TestUpdate(t *testing.T) {
 						body, err := readBody(rw)
 						So(err, ShouldBeNil)
 
-						So(body.Status, ShouldEqual, response.StatusError)
-						So(body.HttpStatus, ShouldEqual, 500)
 						So(body.Errors[0].Compare(*restErr), ShouldBeTrue)
 						So(body.Content, ShouldBeNil)
 					})
 				})
-				Convey(`If correct request was made 
+				Convey(`If correct request was made
 					the updated item body would be returned`, func() {
 
 					router.PUT("/correct/:model", gjh.New().WithJSONPolicy(policy).Update(Model{}))
@@ -707,8 +676,6 @@ func TestUpdate(t *testing.T) {
 					body, err := readBody(rw)
 					So(err, ShouldBeNil)
 
-					So(body.Status, ShouldEqual, response.StatusOk)
-					So(body.HttpStatus, ShouldEqual, 200)
 					So(body.Errors, ShouldBeEmpty)
 					content, ok := body.Content["model"]
 					So(ok, ShouldBeTrue)
@@ -721,19 +688,243 @@ func TestUpdate(t *testing.T) {
 					So(err, ShouldBeNil)
 					So(model, ShouldResemble, mockModel)
 				})
-
 			})
 		})
 	})
-
 }
 
-func readBody(rw *httptest.ResponseRecorder) (body *response.Body, err error) {
+func TestPatchHandlerfunc(t *testing.T) {
+	Convey("Subject: Patch Handlefunc for *JSONHandler", t, func() {
+
+		var err error
+		var handler *JSONHandler
+		var errHandler *errhandler.ErrorHandler = errhandler.New()
+		var router *gin.Engine
+		var repo *mocks.MockRepository = &mocks.MockRepository{}
+		var req *http.Request
+		var rw *httptest.ResponseRecorder
+		var policy *forms.Policy = &forms.Policy{FailOnError: true}
+		var body *response.DefaultBody
+
+		Convey("Having some *gin.Engine with *ginhandler.JSONHandler.", func() {
+			handler, err = New(repo, errHandler, &response.DefaultBody{})
+			So(err, ShouldBeNil)
+
+			router = gin.New()
+
+			router.PATCH("/incorrectparam/:incorrectparam_name", handler.Patch(Model{}))
+
+			Convey(`Having a request with PATCH method on '/incorrectparam/1' 
+				path that is handled by handler.Patch method with 'Model'`, func() {
+				req = httptest.NewRequest("PATCH",
+					"/incorrectparam/:incorrectparam_name",
+					nil)
+				rw = httptest.NewRecorder()
+
+				router.ServeHTTP(rw, req)
+
+				Convey("Then the response should contain internal error", func() {
+					body, err = readBody(rw)
+					So(err, ShouldBeNil)
+
+					So(body.Errors, ShouldContain, resterrors.ErrInternalError.New())
+				})
+			})
+			Convey("If the handler binds restrict JSONPolicy", func() {
+				handler.WithJSONPolicy(policy)
+
+				router.PATCH("/incorrectjson/:model", handler.Patch(Model{}))
+				Convey(`Having a request with PATCH method on '/incorrectjson/1',
+					that contain incorrect json body...`, func() {
+
+					req = httptest.NewRequest("PATCH", "/incorrectjson/1",
+						strings.NewReader(`{"name": 123`),
+					)
+					rw = httptest.NewRecorder()
+
+					router.ServeHTTP(rw, req)
+
+					Convey("should response with InvalidJSONDocument error", func() {
+						body, err = readBody(rw)
+						So(err, ShouldBeNil)
+						Println(body.Errors[0])
+						So(body.Errors[0].Compare(resterrors.ErrInvalidJSONDocument), ShouldBeTrue)
+					})
+				})
+			})
+			Convey(`If the provided Model doesn't have ID field or doesn't implement
+				IDSetter interface`, func() {
+
+				router.PATCH("/incorrectmodel/:incorrectmodel", handler.Patch(IncorrectModel{}))
+
+				Convey("Having a request with PATCH method on '/incorrectmodel/1'", func() {
+
+					req = httptest.NewRequest("PATCH", "/incorrectmodel/1",
+						strings.NewReader(`{"name": "Incorrect Model Name"}`))
+
+					rw = httptest.NewRecorder()
+
+					router.ServeHTTP(rw, req)
+
+					Convey("The Internal error should be resposned", func() {
+						body, err = readBody(rw)
+						So(err, ShouldBeNil)
+
+						So(body.Errors, ShouldContain, resterrors.ErrInternalError.New())
+					})
+				})
+			})
+			Convey("If dberrors.Error occured during processing repository", func() {
+
+				router.PATCH("/errors/:model", handler.Patch(Model{}))
+
+				Convey(`Having request with PATCH method on '/errors/1',
+				 when an error is unrecognised by the converter`, func() {
+					unknownDBError := &dberrors.Error{Message: "Unknown Error"}
+
+					repo.On("Patch", &Model{Name: "First"}, &Model{ID: 1}).
+						Return(unknownDBError)
+					req = httptest.NewRequest("PATCH",
+						"/errors/1",
+						strings.NewReader(`{"name": "First"}`),
+					)
+					rw = httptest.NewRecorder()
+
+					router.ServeHTTP(rw, req)
+
+					Convey("An internal error should be responsed", func() {
+						body, err = readBody(rw)
+						So(err, ShouldBeNil)
+
+						So(body.Errors, ShouldContain, resterrors.ErrInternalError.New())
+					})
+				})
+
+				Convey(`Having a request with PATCH method on '/errors/2,
+					when a client side error occured using a repository`, func() {
+					dbErr := dberrors.ErrNoResult.New()
+					restErr, err := errHandler.Handle(dbErr)
+					So(err, ShouldBeNil)
+
+					repo.On("Patch", &Model{Name: "Second"}, &Model{ID: 2}).Return(dbErr)
+
+					req = httptest.NewRequest("PATCH", "/errors/2",
+						strings.NewReader(`{"name": "Second"}`),
+					)
+					rw = httptest.NewRecorder()
+
+					router.ServeHTTP(rw, req)
+
+					Convey("A client side error should be responsed (with code '4xx')", func() {
+
+						body, err = readBody(rw)
+						So(err, ShouldBeNil)
+
+						So(body.Errors[0].Compare(*restErr), ShouldBeTrue)
+						So(rw.Code, ShouldEqual, 400)
+					})
+				})
+				Convey(`Having a request with PATCH method on '/errors/3', 
+					when an internal error occured during processing a repository`, func() {
+					dbErr := dberrors.ErrInternalError.New()
+					repo.On("Patch", &Model{Name: "Third"}, &Model{ID: 3}).Return(dbErr)
+
+					req = httptest.NewRequest("PATCH", "/errors/3",
+						strings.NewReader(`{"name": "Third"}`))
+					rw = httptest.NewRecorder()
+
+					router.ServeHTTP(rw, req)
+
+					Convey("An Internal Server error should be responsed", func() {
+						body, err = readBody(rw)
+						So(err, ShouldBeNil)
+
+						So(body.Errors, ShouldContain, resterrors.ErrInternalError.New())
+						So(rw.Code, ShouldEqual, 500)
+					})
+				})
+			})
+			Convey(`Having a succesful request with PATCH method on '/models/1`, func() {
+
+				router.PATCH("/models/:model", handler.Patch(Model{}))
+				repo.On("Patch", &Model{Name: "Success"}, &Model{ID: 1}).Return(nil)
+
+				req = httptest.NewRequest("PATCH", "/models/1",
+					strings.NewReader(`{"name": "Success"}`))
+				rw = httptest.NewRecorder()
+
+				router.ServeHTTP(rw, req)
+
+				Convey("Should response with succesful Model in the content", func() {
+
+					body, err = readBody(rw)
+					So(err, ShouldBeNil)
+
+					So(body.Errors, ShouldBeEmpty)
+					So(rw.Code, ShouldEqual, 200)
+				})
+
+			})
+
+		})
+
+	})
+}
+
+func TestGetResponseBody(t *testing.T) {
+	Convey("Subject: Test getResponseBody method for *JSONHandler", t, func() {
+
+		repo := &mocks.MockRepository{}
+		errHandler := errhandler.New()
+		Convey(`Having a JSONHandler with responseBody that 
+			doesn't implement StatusResponser`, func() {
+			handler, _ := New(repo, errHandler, &response.DefaultBody{})
+
+			Convey(`Using get body with error would return with 
+				new *DefaultBody with given error`, func() {
+				restErr := resterrors.ErrInvalidURI.New()
+				body := handler.getResponseBodyErr(1234, restErr)
+
+				resbody, ok := body.(*response.DefaultBody)
+				So(ok, ShouldBeTrue)
+
+				So(resbody.Errors, ShouldContain, restErr)
+			})
+		})
+		Convey(`Having a JSONHandler with responseBody that implements StatusResponser`, func() {
+			handler, _ := New(repo, errHandler, &response.DetailedBody{})
+			Convey("Using getResponseBodyErr would set status and add error", func() {
+				restErr := resterrors.ErrInvalidURI.New()
+				body := handler.getResponseBodyErr(1234, restErr)
+
+				stResBody, ok := body.(*response.DetailedBody)
+				So(ok, ShouldBeTrue)
+
+				So(stResBody.Errors, ShouldContain, restErr)
+				So(stResBody.HttpStatus, ShouldEqual, 1234)
+			})
+
+			Convey("Using getResponseBodyCon method would set status and add content", func() {
+				content := Model{ID: 1, Name: "Name"}
+				body := handler.getResponseBodyCon(132, content)
+
+				stResBody, ok := body.(*response.DetailedBody)
+				So(ok, ShouldBeTrue)
+
+				So(stResBody.Content["model"], ShouldResemble, content)
+				So(stResBody.HttpStatus, ShouldEqual, 132)
+			})
+
+		})
+	})
+}
+
+func readBody(rw *httptest.ResponseRecorder) (body *response.DefaultBody, err error) {
 	rsp, err := ioutil.ReadAll(rw.Body)
 	if err != nil {
 		return nil, err
 	}
-	body = new(response.Body)
+	body = new(response.DefaultBody)
 	err = json.Unmarshal(rsp, &body)
 	if err != nil {
 		return nil, err

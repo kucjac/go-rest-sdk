@@ -10,63 +10,73 @@ import (
 	"github.com/kucjac/go-rest-sdk/repository"
 	"github.com/kucjac/go-rest-sdk/response"
 	"github.com/kucjac/go-rest-sdk/resterrors"
-	"log"
 	"strings"
 )
 
-// GinJSONHandler the policies are set manually
-type GinJSONHandler struct {
+// JSONHandler the policies are set manually
+type JSONHandler struct {
 	repo             repository.GenericRepository
 	errHandler       *errhandler.ErrorHandler
-	QueryPolicy      *forms.Policy
-	JSONPolicy       *forms.Policy
-	ParametersPolicy *forms.Policy
+	queryPolicy      *forms.Policy
+	jsonPolicy       *forms.Policy
+	parametersPolicy *forms.Policy
+	responseBody     response.Responser
 }
 
-func (g *GinJSONHandler) New() *GinJSONHandler {
+func (g *JSONHandler) New() *JSONHandler {
 	return &(*g)
 }
 
-func (g *GinJSONHandler) WithQueryPolicy(policy *forms.Policy) *GinJSONHandler {
-	g.QueryPolicy = policy
+func (g *JSONHandler) WithQueryPolicy(policy *forms.Policy) *JSONHandler {
+	g.queryPolicy = policy
 	return g
 }
 
-func (g *GinJSONHandler) WithJSONPolicy(policy *forms.Policy) *GinJSONHandler {
-	g.JSONPolicy = policy
+func (g *JSONHandler) WithJSONPolicy(policy *forms.Policy) *JSONHandler {
+	g.jsonPolicy = policy
 	return g
 }
 
-func (g *GinJSONHandler) WithParamPolicy(policy *forms.Policy) *GinJSONHandler {
-	g.ParametersPolicy = policy
+func (g *JSONHandler) WithParamPolicy(policy *forms.Policy) *JSONHandler {
+	g.parametersPolicy = policy
 	return g
 }
 
-// New creates GinJSONHandler for given
+func (g *JSONHandler) WithResponseBody(body response.Responser) *JSONHandler {
+	g.responseBody = body
+	return g
+}
+
+// New creates JSONHandler for given
 func New(repo repository.GenericRepository,
 	errHandler *errhandler.ErrorHandler,
-) (*GinJSONHandler, error) {
+	responseBody response.Responser,
+) (*JSONHandler, error) {
 	if repo == nil || errHandler == nil {
 		return nil, errors.New("repository and errorHandler cannot be nil.")
 	}
-	ginHandler := &GinJSONHandler{
-		repo:       repo,
-		errHandler: errHandler,
+	if responseBody == nil {
+		responseBody = &response.DefaultBody{}
+	}
+	ginHandler := &JSONHandler{
+		repo:         repo,
+		errHandler:   errHandler,
+		responseBody: responseBody,
 	}
 	return ginHandler, nil
 }
 
 // Create returns gin.handlerFunc that for given 'model' creates new entity
 // on the base of the request json body.
-func (g *GinJSONHandler) Create(model interface{}) gin.HandlerFunc {
+func (g *JSONHandler) Create(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
 
 		obj := refutils.ObjOfPtrType(model)
-		err := forms.BindJSON(c.Request, obj, g.JSONPolicy)
+		err := forms.BindJSON(c.Request, obj, g.jsonPolicy)
 		if err != nil {
-			resErr := resterrors.ErrInvalidJSONDocument.New()
-			resErr.AddDetailInfo(err.Error())
-			c.JSON(400, response.NewWithError(400, resErr))
+			restErr := resterrors.ErrInvalidJSONDocument.New()
+			restErr.AddDetailInfo(err.Error())
+			c.JSON(400, g.getResponseBodyErr(400, restErr))
 			return
 		}
 
@@ -74,33 +84,31 @@ func (g *GinJSONHandler) Create(model interface{}) gin.HandlerFunc {
 		dberr := g.repo.Create(obj)
 
 		if dberr != nil {
-			rErr, err := g.errHandler.Handle(dberr)
+			var isInternal bool
+			restErr, err := g.errHandler.Handle(dberr)
 			if err != nil {
 				c.Error(err)
-				c.Error(dberr)
-				c.JSON(500, response.NewWithError(500, resterrors.ErrInternalError.New()))
-				return
-			}
-			isInternal := rErr.Compare(resterrors.ErrInternalError)
-			if isInternal {
-				c.Error(dberr)
-				c.JSON(500, response.NewWithError(500, rErr))
+				isInternal = true
+				restErr = resterrors.ErrInternalError.New()
 			} else {
-				c.JSON(400, response.NewWithError(400, rErr))
+				if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
+					c.JSON(400, g.getResponseBodyErr(400, restErr))
+					return
+				}
 			}
+			c.Error(dberr)
+			c.JSON(500, g.getResponseBodyErr(500, restErr))
 			return
 		}
 
-		body := response.New()
-		body.AddContent(refutils.ModelName(obj), obj)
-		c.JSON(201, body)
+		c.JSON(201, g.getResponseBodyCon(201, obj))
 	}
 }
 
 // Get is a JSON gin.HandlerFunc that gets given model entity
 // with provided 'modelname_id' entity
 // The model is taken from the repository based on its id and name
-func (g *GinJSONHandler) Get(model interface{}) gin.HandlerFunc {
+func (g *JSONHandler) Get(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Get model name
 		modelName := strings.ToLower(refutils.StructName(model))
@@ -108,7 +116,8 @@ func (g *GinJSONHandler) Get(model interface{}) gin.HandlerFunc {
 		// modelID should be a url parameter as a ''
 		modelID := c.Param(modelName)
 		if modelID == "" {
-			c.JSON(500, response.NewWithError(500, resterrors.ErrInternalError.New()))
+			restErr := resterrors.ErrInternalError.New()
+			c.JSON(500, g.getResponseBodyErr(500, restErr))
 			return
 		}
 
@@ -119,7 +128,8 @@ func (g *GinJSONHandler) Get(model interface{}) gin.HandlerFunc {
 		err := forms.SetID(obj, modelID)
 		if err != nil {
 			c.Error(err)
-			c.JSON(500, response.NewWithError(500, resterrors.ErrInternalError.New()))
+			restErr := resterrors.ErrInternalError.New()
+			c.JSON(500, g.getResponseBodyErr(500, restErr))
 			return
 		}
 
@@ -133,51 +143,45 @@ func (g *GinJSONHandler) Get(model interface{}) gin.HandlerFunc {
 				c.Error(err)
 				isInternal = true
 				restErr = resterrors.ErrInternalError.New()
-			}
-			// Internal Server Error in all other types
-			if !isInternal {
+			} else {
 				if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
-					c.JSON(400, response.NewWithError(400, restErr))
+					c.JSON(400, g.getResponseBodyErr(400, restErr))
 					return
 				}
 			}
-			c.JSON(500, response.NewWithError(500, restErr))
+			// Internal Server Error in all other types
+			c.JSON(500, g.getResponseBodyErr(500, restErr))
 			return
 		}
 
-		// Get body
-		body := response.New()
-
-		// Add content
-		body.AddContent(modelName, result)
-
 		// Marshal to json with http.Status - 200
-		c.JSON(200, body)
+		c.JSON(200, g.getResponseBodyCon(200, result))
 		return
 	}
 }
 
-func (g *GinJSONHandler) List(model interface{}) gin.HandlerFunc {
+func (g *JSONHandler) List(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Create new request object for the list
 		reqObj := refutils.ObjOfPtrType(model)
 
 		// Bind URL Query to the req object
-		err := forms.BindQuery(c.Request, reqObj, g.QueryPolicy)
+		err := forms.BindQuery(c.Request, reqObj, g.queryPolicy)
 		if err != nil {
 			restErr := resterrors.ErrInvalidQueryParameter.New()
 			restErr.AddDetailInfo(err.Error())
-			c.JSON(400, response.NewWithError(400, restErr))
+
+			c.JSON(400, g.getResponseBodyErr(400, restErr))
 			return
 		}
 
 		// Bind URL Query to the list parameters
 		parameters := &repository.ListParameters{}
-		err = forms.BindQuery(c.Request, parameters, g.ParametersPolicy)
+		err = forms.BindQuery(c.Request, parameters, g.parametersPolicy)
 		if err != nil {
 			restErr := resterrors.ErrInvalidQueryParameter.New()
 			restErr.AddDetailInfo(err.Error())
-			c.JSON(400, response.NewWithError(400, restErr))
+			c.JSON(400, g.getResponseBodyErr(400, restErr))
 			return
 		}
 
@@ -196,22 +200,20 @@ func (g *GinJSONHandler) List(model interface{}) gin.HandlerFunc {
 				c.Error(err)
 				restErr = resterrors.ErrInternalError.New()
 			} else if isInternal := restErr.Compare(resterrors.ErrInternalError); !isInternal {
-				c.JSON(400, response.NewWithError(400, restErr))
+				c.JSON(400, g.getResponseBodyErr(400, restErr))
 				return
 			}
-			c.JSON(500, response.NewWithError(500, restErr))
+			c.JSON(500, g.getResponseBodyErr(500, restErr))
 			return
 		}
 
-		body := response.New()
-		body.AddContent(refutils.ModelName(result), result)
-		c.JSON(200, body)
+		c.JSON(200, g.getResponseBodyCon(200, result))
 		return
 
 	}
 }
 
-func (g *GinJSONHandler) Update(model interface{}) gin.HandlerFunc {
+func (g *JSONHandler) Update(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Get model name
 		modelName := refutils.ModelName(model)
@@ -220,18 +222,21 @@ func (g *GinJSONHandler) Update(model interface{}) gin.HandlerFunc {
 		modelID := c.Param(modelName)
 		if modelID == "" {
 			c.Error(errors.New("Incorrect model parameter in the routing url."))
-			c.JSON(500, response.NewWithError(500, resterrors.ErrInternalError.New()))
+
+			restErr := resterrors.ErrInternalError.New()
+			c.JSON(500, g.responseBody.NewErrored().WithErrors(restErr))
 			return
 		}
 
 		reqObj := refutils.ObjOfPtrType(model)
 
 		// BindJSON from the request
-		err := forms.BindJSON(c.Request, reqObj, g.JSONPolicy)
+		err := forms.BindJSON(c.Request, reqObj, g.jsonPolicy)
 		if err != nil {
 			restErr := resterrors.ErrInvalidJSONDocument.New()
 			restErr.AddDetailInfo(err.Error())
-			c.JSON(400, response.NewWithError(400, restErr))
+
+			c.JSON(400, g.getResponseBodyErr(400, restErr))
 			return
 		}
 
@@ -240,7 +245,8 @@ func (g *GinJSONHandler) Update(model interface{}) gin.HandlerFunc {
 		if err != nil {
 			c.Error(err)
 			restErr := resterrors.ErrInternalError.New()
-			c.JSON(500, response.NewWithError(500, restErr))
+
+			c.JSON(500, g.getResponseBodyErr(500, restErr))
 			return
 		}
 
@@ -252,42 +258,41 @@ func (g *GinJSONHandler) Update(model interface{}) gin.HandlerFunc {
 				c.Error(err)
 				restErr = resterrors.ErrInternalError.New()
 			} else if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
-				c.JSON(400, response.NewWithError(400, restErr))
+				c.JSON(400, g.getResponseBodyErr(400, restErr))
 				return
 			}
-			c.JSON(500, response.NewWithError(500, restErr))
+			c.JSON(500, g.getResponseBodyErr(500, restErr))
 			return
 		}
 
 		// Response with the given requested object
-		body := response.New()
-		body.AddContent(refutils.ModelName(model), reqObj)
-
-		c.JSON(200, body)
+		c.JSON(200, g.getResponseBodyCon(200, reqObj))
 		return
 	}
 }
 
-func (g *GinJSONHandler) Patch(model interface{}) gin.HandlerFunc {
+func (g *JSONHandler) Patch(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Get model name
-		modelName := refutils.StructName(model)
+		modelName := refutils.ModelName(model)
 
 		// modelID should be a url parameter as a ''
 		modelID := c.Param(modelName)
 		if modelID == "" {
-			c.JSON(400, response.NewWithError(400, resterrors.ErrInvalidURI.New()))
+			restErr := resterrors.ErrInternalError.New()
+			c.JSON(500, g.getResponseBodyErr(500, restErr))
 			return
 		}
 
 		reqObj := refutils.ObjOfPtrType(model)
 
 		// BindJSON from the request
-		err := forms.BindJSON(c.Request, reqObj, nil)
+		err := forms.BindJSON(c.Request, reqObj, g.jsonPolicy)
 		if err != nil {
 			restErr := resterrors.ErrInvalidJSONDocument.New()
 			restErr.AddDetailInfo(err.Error())
-			c.JSON(400, response.NewWithError(400, restErr))
+
+			c.JSON(400, g.getResponseBodyErr(400, restErr))
 			return
 		}
 
@@ -298,7 +303,8 @@ func (g *GinJSONHandler) Patch(model interface{}) gin.HandlerFunc {
 		if err != nil {
 			c.Error(err)
 			restErr := resterrors.ErrInternalError.New()
-			c.JSON(500, response.NewWithError(500, restErr))
+
+			c.JSON(500, g.getResponseBodyErr(500, restErr))
 			return
 		}
 
@@ -307,31 +313,29 @@ func (g *GinJSONHandler) Patch(model interface{}) gin.HandlerFunc {
 			var isInternal bool
 			restErr, err := g.errHandler.Handle(dbErr)
 			if err != nil {
+				c.Error(err)
 				isInternal = true
 				restErr = resterrors.ErrInternalError.New()
 			}
 
 			if !isInternal {
 				if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
-					c.JSON(400, response.NewWithError(400, restErr))
+					c.JSON(400, g.getResponseBodyErr(400, restErr))
 					return
 				}
 			}
-			c.Error(err)
-			c.JSON(500, response.NewWithError(500, restErr))
+
+			c.JSON(500, g.getResponseBodyErr(500, restErr))
 			return
 		}
 
 		// Response with the given requested object
-		body := response.New()
-		body.AddContent(refutils.ModelName(model), reqObj)
-
-		c.JSON(200, body)
+		c.JSON(200, g.responseBody.New().WithContent(reqObj))
 		return
 	}
 }
 
-func (g *GinJSONHandler) Delete(model interface{}) gin.HandlerFunc {
+func (g *JSONHandler) Delete(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Get model name
 		modelName := refutils.StructName(model)
@@ -339,7 +343,8 @@ func (g *GinJSONHandler) Delete(model interface{}) gin.HandlerFunc {
 		// modelID should be a url parameter as a ''
 		modelID := c.Param(modelName)
 		if modelID == "" {
-			c.JSON(400, response.NewWithError(400, resterrors.ErrInvalidURI.New()))
+			restErr := resterrors.ErrInternalError.New()
+			c.JSON(500, g.getResponseBodyErr(500, restErr))
 			return
 		}
 
@@ -350,7 +355,7 @@ func (g *GinJSONHandler) Delete(model interface{}) gin.HandlerFunc {
 		if err != nil {
 			restErr := resterrors.ErrInvalidJSONDocument.New()
 			restErr.AddDetailInfo(err.Error())
-			c.JSON(400, response.NewWithError(400, restErr))
+			c.JSON(400, g.getResponseBodyErr(400, restErr))
 			return
 		}
 
@@ -361,7 +366,7 @@ func (g *GinJSONHandler) Delete(model interface{}) gin.HandlerFunc {
 		if err != nil {
 			c.Error(err)
 			restErr := resterrors.ErrInternalError.New()
-			c.JSON(500, response.NewWithError(500, restErr))
+			c.JSON(500, g.getResponseBodyErr(500, restErr))
 			return
 		}
 
@@ -370,30 +375,44 @@ func (g *GinJSONHandler) Delete(model interface{}) gin.HandlerFunc {
 			var isInternal bool
 			restErr, err := g.errHandler.Handle(dbErr)
 			if err != nil {
+				c.Error(err)
 				isInternal = true
 				restErr = resterrors.ErrInternalError.New()
 			}
 
 			if !isInternal {
 				if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
-					c.JSON(400, response.NewWithError(400, restErr))
+					c.JSON(400, g.getResponseBodyErr(400, restErr))
 					return
 				}
 			}
-			c.Error(err)
-			c.JSON(500, response.NewWithError(500, restErr))
+			c.JSON(500, g.getResponseBodyErr(500, restErr))
 			return
 		}
 
 		// Response with the given requested object
-		body := response.New()
-		c.JSON(204, body)
+		c.JSON(204, g.getResponseBodyCon(204, reqObj))
+
 		return
 	}
 }
 
-func (g *GinJSONHandler) checkRepository() {
-	if g.repo == nil {
-		log.Fatal("No repository set for handler")
+func (g *JSONHandler) getResponseBodyErr(
+	status int, errs ...*resterrors.Error,
+) response.Responser {
+	body := g.responseBody.NewErrored().WithErrors(errs...)
+	if body, ok := body.(response.StatusResponser); ok {
+		body.WithStatus(status)
 	}
+	return body
+}
+
+func (g *JSONHandler) getResponseBodyCon(
+	status int, content ...interface{},
+) response.Responser {
+	body := g.responseBody.New().WithContent(content...)
+	if body, ok := body.(response.StatusResponser); ok {
+		body.WithStatus(status)
+	}
+	return body
 }
