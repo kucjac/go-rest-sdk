@@ -185,7 +185,6 @@ func (g *GinJSONHandler) List(model interface{}) gin.HandlerFunc {
 		var dberr *dberrors.Error
 
 		if parameters.ContainsParameters() {
-			log.Println(parameters.IDs)
 			result, dberr = g.repo.ListWithParams(reqObj, parameters)
 		} else {
 			result, dberr = g.repo.List(reqObj)
@@ -215,12 +214,13 @@ func (g *GinJSONHandler) List(model interface{}) gin.HandlerFunc {
 func (g *GinJSONHandler) Update(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Get model name
-		modelName := refutils.StructName(model)
+		modelName := refutils.ModelName(model)
 
 		// modelID should be a url parameter as a ''
 		modelID := c.Param(modelName)
 		if modelID == "" {
-			c.JSON(400, response.NewWithError(400, resterrors.ErrInvalidURI.New()))
+			c.Error(errors.New("Incorrect model parameter in the routing url."))
+			c.JSON(500, response.NewWithError(500, resterrors.ErrInternalError.New()))
 			return
 		}
 
@@ -249,17 +249,12 @@ func (g *GinJSONHandler) Update(model interface{}) gin.HandlerFunc {
 			var isInternal bool
 			restErr, err := g.errHandler.Handle(dbErr)
 			if err != nil {
-				isInternal = true
+				c.Error(err)
 				restErr = resterrors.ErrInternalError.New()
+			} else if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
+				c.JSON(400, response.NewWithError(400, restErr))
+				return
 			}
-
-			if !isInternal {
-				if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
-					c.JSON(400, response.NewWithError(400, restErr))
-					return
-				}
-			}
-			c.Error(err)
 			c.JSON(500, response.NewWithError(500, restErr))
 			return
 		}

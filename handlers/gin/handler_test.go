@@ -354,7 +354,6 @@ func TestGet(t *testing.T) {
 					So(body.Errors, ShouldContain, resterrors.ErrResourceNotFound.New())
 					So(body.Content, ShouldBeEmpty)
 				})
-
 			})
 
 			Convey("If the given id entity exists the handler func would return it in the body->content->modelname", func() {
@@ -377,7 +376,6 @@ func TestGet(t *testing.T) {
 				So(body.Status, ShouldEqual, response.StatusOk)
 				So(body.Errors, ShouldBeEmpty)
 
-				Println(body)
 				respModel, ok := body.Content["model"]
 				So(ok, ShouldBeTrue)
 
@@ -550,6 +548,184 @@ func TestList(t *testing.T) {
 		})
 
 	})
+}
+
+func TestUpdate(t *testing.T) {
+	Convey("Subject: GinJSONHandler Update method", t, func() {
+		var err error
+		var gjh *GinJSONHandler
+		var errHandler *errhandler.ErrorHandler = errhandler.New()
+		var router *gin.Engine
+		var repo *mocks.MockRepository = &mocks.MockRepository{}
+		var req *http.Request
+		var rw *httptest.ResponseRecorder
+		var policy *forms.Policy = &forms.Policy{FailOnError: true}
+
+		Convey("Having some gin.Router and GinJSONHandler", func() {
+			router = gin.New()
+
+			gjh, err = New(repo, errHandler)
+			So(err, ShouldBeNil)
+
+			Convey("Handling the request with method PUT on '/models/1'", func() {
+
+				Convey(`If invalid id parameter is provided in the router url, 
+					an internal error would be returned `, func() {
+					router.PUT("/incorrectid/:incorrectmodel_id", gjh.Update(Model{}))
+
+					req = httptest.NewRequest("PUT", "/incorrectid/1", nil)
+					rw = httptest.NewRecorder()
+
+					router.ServeHTTP(rw, req)
+
+					body, err := readBody(rw)
+					So(err, ShouldBeNil)
+
+					So(body.Status, ShouldEqual, response.StatusError)
+					So(body.HttpStatus, ShouldEqual, 500)
+					So(body.Errors[0].Compare(resterrors.ErrInternalError), ShouldBeTrue)
+					So(body.Content, ShouldBeEmpty)
+				})
+
+				Convey(`If an incorrect JSON body request was provided
+					then the client side restError should be send`, func() {
+					router.PUT("/correctid/:model", gjh.WithJSONPolicy(policy).Update(Model{}))
+
+					jsonBody := strings.NewReader(`{"name" = "`)
+					req = httptest.NewRequest("PUT", "/correctid/2", jsonBody)
+					rw = httptest.NewRecorder()
+
+					router.ServeHTTP(rw, req)
+
+					body, err := readBody(rw)
+					So(err, ShouldBeNil)
+
+					So(body.Status, ShouldEqual, response.StatusError)
+					So(body.HttpStatus, ShouldEqual, 400)
+					So(body.Errors[0].Compare(resterrors.ErrInvalidJSONDocument), ShouldBeTrue)
+					So(body.Content, ShouldBeEmpty)
+				})
+
+				Convey(`If an incorrect model for setting id was provided, an internal error would be sent`, func() {
+
+					router.PUT("/correctid/:incorrectmodel", gjh.Update(IncorrectModel{}))
+
+					req = httptest.NewRequest("PUT", "/correctid/1",
+						strings.NewReader(`{"name":"incorrect model"}`))
+					rw = httptest.NewRecorder()
+
+					router.ServeHTTP(rw, req)
+
+					body, err := readBody(rw)
+					So(err, ShouldBeNil)
+
+					So(body.Status, ShouldEqual, response.StatusError)
+					So(body.HttpStatus, ShouldEqual, 500)
+					So(body.Errors[0].Compare(resterrors.ErrInternalError), ShouldBeTrue)
+					So(body.Content, ShouldBeEmpty)
+				})
+
+				Convey("If the repository.Update method returns dberrors.Error", func() {
+					router.PUT("/errored/:model", gjh.Update(Model{}))
+					Convey(`If unrecognized dberrors.Error was provided an resterrors.ErrInternal should be returned`, func() {
+						var dbErr *dberrors.Error = &dberrors.Error{Message: "Some unknown internal error occured."}
+						repo.On("Update", &Model{ID: 3, Name: "Piesek"}).Return(dbErr)
+
+						req = httptest.NewRequest("PUT", "/errored/3",
+							strings.NewReader(`{"name": "Piesek"}`))
+						rw = httptest.NewRecorder()
+
+						router.ServeHTTP(rw, req)
+
+						body, err := readBody(rw)
+						So(err, ShouldBeNil)
+
+						So(body.Status, ShouldEqual, response.StatusError)
+						So(body.HttpStatus, ShouldEqual, 500)
+						So(body.Errors[0].Compare(resterrors.ErrInternalError), ShouldBeTrue)
+						So(body.Content, ShouldBeEmpty)
+					})
+
+					Convey(`If an error was recognised as non Internal 
+						response should contain 400 code`, func() {
+
+						dbErr := dberrors.ErrIntegrConstViolation.New()
+						repo.On("Update", &Model{ID: -1, Name: "SomeName"}).Return(dbErr)
+
+						restErr, _ := errHandler.Handle(dbErr)
+
+						req = httptest.NewRequest("PUT", "/errored/-1",
+							strings.NewReader(`{"name": "SomeName"}`))
+						rw = httptest.NewRecorder()
+
+						router.ServeHTTP(rw, req)
+
+						body, err := readBody(rw)
+						So(err, ShouldBeNil)
+
+						So(body.Status, ShouldEqual, response.StatusError)
+						So(body.HttpStatus, ShouldEqual, 400)
+						So(body.Errors[0].Compare(*restErr), ShouldBeTrue)
+						So(body.Content, ShouldBeEmpty)
+					})
+					Convey("If recognized Internal error was returned", func() {
+
+						dbErr := dberrors.ErrSystemError.New()
+						repo.On("Update", &Model{ID: 66, Name: "Very funny name"}).Return(dbErr)
+
+						restErr, _ := errHandler.Handle(dbErr)
+
+						req = httptest.NewRequest("PUT", "/errored/66",
+							strings.NewReader(`{"name": "Very funny name"}`))
+						rw = httptest.NewRecorder()
+
+						router.ServeHTTP(rw, req)
+
+						body, err := readBody(rw)
+						So(err, ShouldBeNil)
+
+						So(body.Status, ShouldEqual, response.StatusError)
+						So(body.HttpStatus, ShouldEqual, 500)
+						So(body.Errors[0].Compare(*restErr), ShouldBeTrue)
+						So(body.Content, ShouldBeNil)
+					})
+				})
+				Convey(`If correct request was made 
+					the updated item body would be returned`, func() {
+
+					router.PUT("/correct/:model", gjh.New().WithJSONPolicy(policy).Update(Model{}))
+					mockModel := &Model{ID: 6543, Name: "Correct Update"}
+					repo.On("Update", mockModel).Return(nil)
+
+					req = httptest.NewRequest("PUT", "/correct/6543",
+						strings.NewReader(`{"name":"Correct Update"}`))
+
+					rw = httptest.NewRecorder()
+
+					router.ServeHTTP(rw, req)
+
+					body, err := readBody(rw)
+					So(err, ShouldBeNil)
+
+					So(body.Status, ShouldEqual, response.StatusOk)
+					So(body.HttpStatus, ShouldEqual, 200)
+					So(body.Errors, ShouldBeEmpty)
+					content, ok := body.Content["model"]
+					So(ok, ShouldBeTrue)
+
+					contentJson, err := json.Marshal(content)
+					So(err, ShouldBeNil)
+
+					var model *Model
+					err = json.Unmarshal(contentJson, &model)
+					So(err, ShouldBeNil)
+					So(model, ShouldResemble, mockModel)
+				})
+
+			})
+		})
+	})
+
 }
 
 func readBody(rw *httptest.ResponseRecorder) (body *response.Body, err error) {
