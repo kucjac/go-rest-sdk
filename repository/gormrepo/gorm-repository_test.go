@@ -109,13 +109,14 @@ func TestGORMRepositoryCreate(t *testing.T) {
 				during the creation process`, func() {
 				So(db.NewRecord(foo), ShouldBeTrue)
 				err = gormRepo.Create(&foo)
+
 				So(err, ShouldBeNil)
 
-				err = gormRepo.Create(&foo)
-				So(err, ShouldBeError)
-				So(err, ShouldHaveSameTypeAs, &dberrors.Error{})
+				dbErr := gormRepo.Create(&foo)
 
-				dbErr := err.(*dberrors.Error)
+				So(dbErr, ShouldBeError)
+				So(dbErr, ShouldHaveSameTypeAs, &dberrors.Error{})
+
 				proto, err := dbErr.GetPrototype()
 				So(err, ShouldBeNil)
 				So(proto, ShouldResemble, dberrors.ErrUniqueViolation)
@@ -249,7 +250,53 @@ func TestGORMRepositorySelect(t *testing.T) {
 		})
 
 	})
+}
 
+func TestGORMRepositoryCount(t *testing.T) {
+	Convey(`Subject: GORMRepository method Count`, t, func() {
+		Convey("Having a GORM db connection and a repository based on it", func() {
+			db, err := openGormSqlite()
+			So(err, ShouldBeNil)
+			defer db.Close()
+			defer clearDB(db)
+
+			repo, err := New(db)
+			So(err, ShouldBeNil)
+
+			Convey("Having some data records for given record", func() {
+				var bars []*Bar = seedBars(db)
+
+				Convey(`Using Count method on provided Model,
+				 would return the number of records for given collection 
+				 queried by the fields provided in argument.`, func() {
+
+					Convey(`If no fields are provided, the number of all records from the collection would be returned.`, func() {
+						count, err := repo.Count(&Bar{})
+
+						So(err, ShouldBeNil)
+						So(len(bars), ShouldEqual, count)
+					})
+
+					Convey(`If fields are provided, the count would return only number of records 
+						that match query based on the provided fields.`, func() {
+						count, err := repo.Count(bars[1])
+
+						So(err, ShouldBeNil)
+						So(count, ShouldEqual, 1)
+					})
+
+					Convey(`Should return 0 and dberrors.Error if an error occured.`, func() {
+
+						count, err := repo.Count(&NotInDB{})
+						So(err, ShouldBeError)
+						So(count, ShouldEqual, 0)
+						So(err, ShouldHaveSameTypeAs, &dberrors.Error{})
+					})
+				})
+			})
+
+		})
+	})
 }
 
 func TestGORMRepositorySelectWithParams(t *testing.T) {
@@ -496,6 +543,7 @@ func TestGORMRepositoryPatch(t *testing.T) {
 
 			Convey("Should update all 'what' records fields that  match given 'where'", func() {
 				var what *Bar = &Bar{Name: "ChangedFirst", Property: 1234}
+
 				err = gormRepo.Patch(what, &Bar{ID: bars[0].ID})
 				So(err, ShouldBeNil)
 
@@ -509,6 +557,7 @@ func TestGORMRepositoryPatch(t *testing.T) {
 			Convey("Should not update all record for given 'where'", func() {
 				var req *Bar = &Bar{Name: "Changed Second"}
 				err = gormRepo.Patch(req, &Bar{ID: bars[1].ID})
+
 				So(err, ShouldBeNil)
 
 				var getted *Bar = &Bar{ID: bars[1].ID}
@@ -532,7 +581,7 @@ func TestGORMRepositoryPatch(t *testing.T) {
 				var name string = "Long Name longer than possible"
 				db.Create(&Foobar{Name: name})
 				err = gormRepo.Patch(&Foobar{Name: name},
-					Foobar{ID: foobar.ID},
+					&Foobar{ID: foobar.ID},
 				)
 				So(err, ShouldBeError)
 				So(err, ShouldHaveSameTypeAs, &dberrors.Error{})
@@ -595,7 +644,16 @@ func TestGORMRepositoryDelete(t *testing.T) {
 		})
 
 	})
+}
 
+func TestGORMRepositoryImplementsRepository(t *testing.T) {
+	Convey(`Subject: GORMRepository implements Repository interface`, t, func() {
+
+		Convey("Gorm repository should implement Repository interface.", func() {
+
+			So(&GORMRepository{}, ShouldImplement, (*repository.Repository)(nil))
+		})
+	})
 }
 
 func openGormSqlite() (*gorm.DB, error) {

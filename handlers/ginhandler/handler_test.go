@@ -40,7 +40,7 @@ func TestNew(t *testing.T) {
 		var err error
 		var gjh1, gjh2, gjh3 *JSONHandler
 
-		Convey(`Having some repository that implements repository.GenericRepository 
+		Convey(`Having some repository that implements repository.Repository 
 			and error handler the correct json handler should be created`, func() {
 			repo := &mocks.MockRepository{}
 			errHandler := errhandler.New()
@@ -55,7 +55,7 @@ func TestNew(t *testing.T) {
 			repo := &mocks.MockRepository{}
 			var nilErrHandler *errhandler.ErrorHandler = nil
 
-			var nilRepo repository.GenericRepository = nil
+			var nilRepo repository.Repository = nil
 			errHandler := errhandler.New()
 
 			gjh1, err = New(repo, nilErrHandler, nil)
@@ -447,6 +447,8 @@ func TestListHandlerfunc(t *testing.T) {
 					{ID: 3, Name: "Third"},
 				}
 				repo.On("ListWithParams", &Model{}, &repository.ListParameters{IDs: []int{1, 2, 3}}).Return(mockModels, nil)
+				repo.On("Count", Model{}).Return(len(mockModels), nil)
+
 				req = httptest.NewRequest("GET", "/parametrized/models?ids=1&ids=2&ids=3", nil)
 				rw = httptest.NewRecorder()
 
@@ -456,7 +458,6 @@ func TestListHandlerfunc(t *testing.T) {
 				So(err, ShouldBeNil)
 
 				So(body.Errors, ShouldBeEmpty)
-
 				var models []*Model
 
 				modelJson, err := json.Marshal(body.Content["models"])
@@ -465,14 +466,22 @@ func TestListHandlerfunc(t *testing.T) {
 				So(err, ShouldBeNil)
 
 				So(models, ShouldResemble, mockModels)
+				countNonTyped, ok := body.Content["count"]
+				So(ok, ShouldBeTrue)
+
+				count, ok := countNonTyped.(float64)
+				So(ok, ShouldBeTrue)
+
+				So(count, ShouldEqual, len(mockModels))
 			})
 
 			router.GET("/errored/models", gjh.WithQueryPolicy(&forms.Policy{TaggedOnly: false}).List(Model{}))
 			Convey(`Having GET method request on '/errored/models'`, func() {
 				Convey("When some clientside dberror occurs", func() {
 					dbErr := dberrors.ErrNoResult.New()
-					repo.On("List", &Model{Name: "Marcin"}).Return(nil, dbErr)
 
+					repo.On("List", &Model{Name: "Marcin"}).Return(nil, dbErr)
+					repo.On("Count", Model{}).Return(nil, dbErr)
 					restErr, _ := errHandler.Handle(dbErr)
 
 					req = httptest.NewRequest("GET", "/errored/models?name=Marcin", nil)
@@ -524,7 +533,23 @@ func TestListHandlerfunc(t *testing.T) {
 					So(body.Errors[0].Compare(resterrors.ErrInternalError), ShouldBeTrue)
 					So(body.Content, ShouldBeEmpty)
 				})
+			})
 
+			Convey(`Having GET method on /errored/count/models and some error occured
+				during Count method.`, func() {
+				dbErr := dberrors.ErrInternalError.New()
+				repo.On("List", &Model{}).Return([]*Model{{ID: 1, Name: "First"}}, nil)
+				repo.On("Count", Model{}).Return(0, dbErr)
+
+				req = httptest.NewRequest("GET", "/errored/count/models", nil)
+				rw = httptest.NewRecorder()
+
+				router.GET("/errored/count/models", gjh.List(Model{}))
+				router.ServeHTTP(rw, req)
+				body, err := readBody(rw)
+				So(err, ShouldBeNil)
+
+				So(body.Errors, ShouldContain, resterrors.ErrInternalError.New())
 			})
 		})
 
@@ -868,6 +893,81 @@ func TestPatchHandlerfunc(t *testing.T) {
 
 		})
 
+	})
+}
+
+func TestDeleteHandlerfunc(t *testing.T) {
+	Convey("Subject: Gin JSONHandler Delete method.", t, func() {
+
+		var err error
+		var handler *JSONHandler
+		var errHandler *errhandler.ErrorHandler = errhandler.New()
+		var router *gin.Engine
+		var repo *mocks.MockRepository = &mocks.MockRepository{}
+		var req *http.Request
+		var rw *httptest.ResponseRecorder
+		// var policy *forms.Policy = &forms.Policy{FailOnError: true}
+		var body *response.DefaultBody = &response.DefaultBody{}
+		Convey("Having some *gin.Engine with *ginhandler.JSONHandler", func() {
+			router = gin.New()
+			handler, err = New(repo, errHandler, body)
+			So(err, ShouldBeNil)
+
+			Convey(`If the route path on the gin router was incorrectly set`, func() {
+				// the parameter should be :model
+				router.DELETE("/incorrect/:modelid", handler.Delete(Model{}))
+
+				Convey("Having a request on /incorrect/4", func() {
+					req = httptest.NewRequest("DELETE", "/incorrect/4", nil)
+					rw = httptest.NewRecorder()
+
+					router.ServeHTTP(rw, req)
+					Convey("An internal error should be responsed", func() {
+						body, err := readBody(rw)
+						So(err, ShouldBeNil)
+
+						So(body.Errors, ShouldContain, resterrors.ErrInternalError.New())
+					})
+				})
+			})
+			Convey("If en error occurred during usage of repository", func() {
+				router.DELETE("/error/:model", handler.Delete(Model{}))
+
+				Convey("Having a request on /error/123 an error should be responsed", func() {
+					dbError := dberrors.ErrNoResult.New()
+					repo.On("Delete", &Model{}, &Model{ID: 123}).Return(dbError)
+
+					req = httptest.NewRequest("DELETE", "/error/123", nil)
+					rw = httptest.NewRecorder()
+
+					router.ServeHTTP(rw, req)
+
+					body, err := readBody(rw)
+					So(err, ShouldBeNil)
+
+					So(body.Errors, ShouldNotBeEmpty)
+				})
+			})
+			Convey("If no errors occurs a '204' response should be sent", func() {
+				router.DELETE("/models/:model", handler.Delete(Model{}))
+
+				Convey("Having a request on '/models/2", func() {
+					repo.On("Delete", &Model{}, &Model{ID: 2}).Return(nil)
+					req = httptest.NewRequest("DELETE", "/models/2", nil)
+					rw = httptest.NewRecorder()
+
+					router.ServeHTTP(rw, req)
+
+					Convey("A '204' with no content in response should be send", func() {
+						body, err := readBody(rw)
+						So(err, ShouldBeNil)
+
+						So(body.Errors, ShouldBeEmpty)
+						So(body.Content, ShouldBeEmpty)
+					})
+				})
+			})
+		})
 	})
 }
 

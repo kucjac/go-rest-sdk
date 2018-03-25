@@ -4,7 +4,7 @@ import (
 	"github.com/kucjac/go-rest-sdk/dberrors"
 )
 
-type GenericRepository interface {
+type Repository interface {
 	// Create a new entry for specified 'req' object.
 	Create(req interface{}) (err *dberrors.Error)
 
@@ -33,9 +33,12 @@ type GenericRepository interface {
 	// By providing 'IDs' field all entries with given ID's would be queried
 	ListWithParams(req interface{}, params *ListParameters) (res interface{}, err *dberrors.Error)
 
+	// Count returns the number of record defined by 'req' argument
+	Count(req interface{}) (count int, dbErr *dberrors.Error)
+
 	// Update replaces the whole object with given in argument
 	// If no primary key provided in the 'req' or given 'primary key' is not found
-	// Update creates new entity
+	// in the collection than new record is being created
 	Update(req interface{}) (err *dberrors.Error)
 
 	// Patch updates only selected fields in the 'req' object
@@ -43,8 +46,8 @@ type GenericRepository interface {
 	// if where is nil object then all records for given table would be patched.
 	Patch(req, where interface{}) (err *dberrors.Error)
 
-	// Delete given records from database provided by 'req' object
-	// where describes which entries should be deleted.
+	// Delete given records from database defined by 'req' object
+	// 'where' describes which entries should be deleted.
 	// if where is nil all entries for given model should be deleted.
 	Delete(req, where interface{}) (err *dberrors.Error)
 }

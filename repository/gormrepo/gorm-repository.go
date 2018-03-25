@@ -10,9 +10,11 @@ import (
 	"reflect"
 )
 
+// GORMRepository is an implementation of Repository interface for 'jinzhu/gorm' package.
+// It is composed of *gorm.DB and dberrors.Converter.
 type GORMRepository struct {
 	db        *gorm.DB
-	converter dberrors.Converter
+	converter *gormconv.GORMConverter
 }
 
 func New(db *gorm.DB) (*GORMRepository, error) {
@@ -109,7 +111,15 @@ func (g *GORMRepository) ListWithParams(
 	return reflect.ValueOf(res).Elem().Interface(), nil
 }
 
-func (g *GORMRepository) Update(req interface{}) *dberrors.Error {
+func (g *GORMRepository) Count(req interface{}) (count int, dberr *dberrors.Error) {
+	err := g.db.Model(req).Count(&count).Error
+	if err != nil {
+		return count, g.converter.Convert(err)
+	}
+	return count, nil
+}
+
+func (g *GORMRepository) Update(req interface{}) (dberr *dberrors.Error) {
 	err := g.db.Save(req).Error
 	if err != nil {
 		return g.converter.Convert(err)
@@ -117,10 +127,9 @@ func (g *GORMRepository) Update(req interface{}) *dberrors.Error {
 	return nil
 }
 
-func (g *GORMRepository) Patch(req, where interface{}) *dberrors.Error {
-	model := refutils.ObjOfPtrType(req)
+func (g *GORMRepository) Patch(req, where interface{}) (dberr *dberrors.Error) {
 	var db *gorm.DB
-	db = g.db.Model(model).Where(where).Update(req)
+	db = g.db.Model(req).Where(where).Update(req)
 	err := db.Error
 	rows := db.RowsAffected
 	if rows == 0 && err == nil {

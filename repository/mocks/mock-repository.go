@@ -10,6 +10,29 @@ type MockRepository struct {
 	mock.Mock
 }
 
+// Count provides a mock function with given fields: req
+func (_m *MockRepository) Count(req interface{}) (int, *dberrors.Error) {
+	ret := _m.Called(req)
+
+	var r0 int
+	if rf, ok := ret.Get(0).(func(interface{}) int); ok {
+		r0 = rf(req)
+	} else {
+		r0 = ret.Get(0).(int)
+	}
+
+	var r1 *dberrors.Error
+	if rf, ok := ret.Get(1).(func(interface{}) *dberrors.Error); ok {
+		r1 = rf(req)
+	} else {
+		if ret.Get(1) != nil {
+			r1 = ret.Get(1).(*dberrors.Error)
+		}
+	}
+
+	return r0, r1
+}
+
 // Create provides a mock function with given fields: req
 func (_m *MockRepository) Create(req interface{}) *dberrors.Error {
 	ret := _m.Called(req)

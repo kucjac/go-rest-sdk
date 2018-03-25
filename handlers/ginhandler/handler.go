@@ -15,7 +15,7 @@ import (
 
 // JSONHandler the policies are set manually
 type JSONHandler struct {
-	repo             repository.GenericRepository
+	repo             repository.Repository
 	errHandler       *errhandler.ErrorHandler
 	queryPolicy      *forms.Policy
 	jsonPolicy       *forms.Policy
@@ -48,7 +48,7 @@ func (g *JSONHandler) WithResponseBody(body response.Responser) *JSONHandler {
 }
 
 // New creates JSONHandler for given
-func New(repo repository.GenericRepository,
+func New(repo repository.Repository,
 	errHandler *errhandler.ErrorHandler,
 	responseBody response.Responser,
 ) (*JSONHandler, error) {
@@ -84,20 +84,7 @@ func (g *JSONHandler) Create(model interface{}) gin.HandlerFunc {
 		dberr := g.repo.Create(obj)
 
 		if dberr != nil {
-			var isInternal bool
-			restErr, err := g.errHandler.Handle(dberr)
-			if err != nil {
-				c.Error(err)
-				isInternal = true
-				restErr = resterrors.ErrInternalError.New()
-			} else {
-				if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
-					c.JSON(400, g.getResponseBodyErr(400, restErr))
-					return
-				}
-			}
-			c.Error(dberr)
-			c.JSON(500, g.getResponseBodyErr(500, restErr))
+			g.handleDBError(c, dberr)
 			return
 		}
 
@@ -136,21 +123,7 @@ func (g *JSONHandler) Get(model interface{}) gin.HandlerFunc {
 		// get the specific model from the repository
 		result, dberr := g.repo.Get(obj)
 		if dberr != nil {
-			var isInternal bool
-			// Handle the error
-			restErr, err := g.errHandler.Handle(dberr)
-			if err != nil {
-				c.Error(err)
-				isInternal = true
-				restErr = resterrors.ErrInternalError.New()
-			} else {
-				if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
-					c.JSON(400, g.getResponseBodyErr(400, restErr))
-					return
-				}
-			}
-			// Internal Server Error in all other types
-			c.JSON(500, g.getResponseBodyErr(500, restErr))
+			g.handleDBError(c, dberr)
 			return
 		}
 
@@ -186,6 +159,7 @@ func (g *JSONHandler) List(model interface{}) gin.HandlerFunc {
 		}
 
 		var result interface{}
+		var count int
 		var dberr *dberrors.Error
 
 		if parameters.ContainsParameters() {
@@ -195,40 +169,34 @@ func (g *JSONHandler) List(model interface{}) gin.HandlerFunc {
 		}
 
 		if dberr != nil {
-			restErr, err := g.errHandler.Handle(dberr)
-			if err != nil {
-				c.Error(err)
-				restErr = resterrors.ErrInternalError.New()
-			} else if isInternal := restErr.Compare(resterrors.ErrInternalError); !isInternal {
-				c.JSON(400, g.getResponseBodyErr(400, restErr))
-				return
-			}
-			c.JSON(500, g.getResponseBodyErr(500, restErr))
+			g.handleDBError(c, dberr)
 			return
 		}
 
-		c.JSON(200, g.getResponseBodyCon(200, result))
-		return
+		type Count int
+		count, dberr = g.repo.Count(model)
+		if dberr != nil {
+			g.handleDBError(c, dberr)
+			return
+		}
 
+		c.JSON(200, g.getResponseBodyCon(200, result, Count(count)))
+		return
 	}
 }
 
 func (g *JSONHandler) Update(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get model name
-		modelName := refutils.ModelName(model)
 
-		// modelID should be a url parameter as a ''
-		modelID := c.Param(modelName)
-		if modelID == "" {
-			c.Error(errors.New("Incorrect model parameter in the routing url."))
+		reqObj := refutils.ObjOfPtrType(model)
 
+		// Set model ID for given 'reqObj'
+		if err := g.setModelID(c, reqObj); err != nil {
+			c.Error(err)
 			restErr := resterrors.ErrInternalError.New()
 			c.JSON(500, g.responseBody.NewErrored().WithErrors(restErr))
 			return
 		}
-
-		reqObj := refutils.ObjOfPtrType(model)
 
 		// BindJSON from the request
 		err := forms.BindJSON(c.Request, reqObj, g.jsonPolicy)
@@ -240,28 +208,9 @@ func (g *JSONHandler) Update(model interface{}) gin.HandlerFunc {
 			return
 		}
 
-		// SetID for given model
-		err = forms.SetID(reqObj, modelID)
-		if err != nil {
-			c.Error(err)
-			restErr := resterrors.ErrInternalError.New()
-
-			c.JSON(500, g.getResponseBodyErr(500, restErr))
-			return
-		}
-
 		dbErr := g.repo.Update(reqObj)
 		if dbErr != nil {
-			var isInternal bool
-			restErr, err := g.errHandler.Handle(dbErr)
-			if err != nil {
-				c.Error(err)
-				restErr = resterrors.ErrInternalError.New()
-			} else if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
-				c.JSON(400, g.getResponseBodyErr(400, restErr))
-				return
-			}
-			c.JSON(500, g.getResponseBodyErr(500, restErr))
+			g.handleDBError(c, dbErr)
 			return
 		}
 
@@ -273,12 +222,10 @@ func (g *JSONHandler) Update(model interface{}) gin.HandlerFunc {
 
 func (g *JSONHandler) Patch(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get model name
-		modelName := refutils.ModelName(model)
-
-		// modelID should be a url parameter as a ''
-		modelID := c.Param(modelName)
-		if modelID == "" {
+		// whereObj is the object that defines fields that the model defines
+		whereObj := refutils.ObjOfPtrType(model)
+		if err := g.setModelID(c, whereObj); err != nil {
+			c.Error(err)
 			restErr := resterrors.ErrInternalError.New()
 			c.JSON(500, g.getResponseBodyErr(500, restErr))
 			return
@@ -296,36 +243,9 @@ func (g *JSONHandler) Patch(model interface{}) gin.HandlerFunc {
 			return
 		}
 
-		whereObj := refutils.ObjOfPtrType(model)
-
-		// SetID for given whereObj
-		err = forms.SetID(whereObj, modelID)
-		if err != nil {
-			c.Error(err)
-			restErr := resterrors.ErrInternalError.New()
-
-			c.JSON(500, g.getResponseBodyErr(500, restErr))
-			return
-		}
-
 		dbErr := g.repo.Patch(reqObj, whereObj)
 		if dbErr != nil {
-			var isInternal bool
-			restErr, err := g.errHandler.Handle(dbErr)
-			if err != nil {
-				c.Error(err)
-				isInternal = true
-				restErr = resterrors.ErrInternalError.New()
-			}
-
-			if !isInternal {
-				if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
-					c.JSON(400, g.getResponseBodyErr(400, restErr))
-					return
-				}
-			}
-
-			c.JSON(500, g.getResponseBodyErr(500, restErr))
+			g.handleDBError(c, dbErr)
 			return
 		}
 
@@ -337,12 +257,12 @@ func (g *JSONHandler) Patch(model interface{}) gin.HandlerFunc {
 
 func (g *JSONHandler) Delete(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get model name
-		modelName := refutils.StructName(model)
+		// where obj defines the query for deleting an object
+		whereObj := refutils.ObjOfPtrType(model)
 
-		// modelID should be a url parameter as a ''
-		modelID := c.Param(modelName)
-		if modelID == "" {
+		// set the model id to 'whereObj'
+		if err := g.setModelID(c, whereObj); err != nil {
+			c.Error(err)
 			restErr := resterrors.ErrInternalError.New()
 			c.JSON(500, g.getResponseBodyErr(500, restErr))
 			return
@@ -350,51 +270,62 @@ func (g *JSONHandler) Delete(model interface{}) gin.HandlerFunc {
 
 		reqObj := refutils.ObjOfPtrType(model)
 
-		// BindJSON from the request
-		err := forms.BindJSON(c.Request, reqObj, nil)
-		if err != nil {
-			restErr := resterrors.ErrInvalidJSONDocument.New()
-			restErr.AddDetailInfo(err.Error())
-			c.JSON(400, g.getResponseBodyErr(400, restErr))
-			return
-		}
-
-		whereObj := refutils.ObjOfPtrType(model)
-
-		// SetID for given whereObj
-		err = forms.SetID(whereObj, modelID)
-		if err != nil {
-			c.Error(err)
-			restErr := resterrors.ErrInternalError.New()
-			c.JSON(500, g.getResponseBodyErr(500, restErr))
-			return
-		}
-
 		dbErr := g.repo.Delete(reqObj, whereObj)
 		if dbErr != nil {
-			var isInternal bool
-			restErr, err := g.errHandler.Handle(dbErr)
-			if err != nil {
-				c.Error(err)
-				isInternal = true
-				restErr = resterrors.ErrInternalError.New()
-			}
-
-			if !isInternal {
-				if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
-					c.JSON(400, g.getResponseBodyErr(400, restErr))
-					return
-				}
-			}
-			c.JSON(500, g.getResponseBodyErr(500, restErr))
+			g.handleDBError(c, dbErr)
 			return
 		}
 
 		// Response with the given requested object
-		c.JSON(204, g.getResponseBodyCon(204, reqObj))
-
+		c.JSON(200, g.getResponseBodyCon(204))
 		return
 	}
+}
+
+func (g *JSONHandler) handleDBError(
+	c *gin.Context,
+	dbError *dberrors.Error,
+) {
+	if dbError != nil {
+		var isInternal bool
+		restErr, err := g.errHandler.Handle(dbError)
+		if err != nil {
+			c.Error(err)
+			isInternal = true
+			restErr = resterrors.ErrInternalError.New()
+		}
+
+		if !isInternal {
+			if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
+				c.JSON(400, g.getResponseBodyErr(400, restErr))
+				return
+			}
+		}
+		c.JSON(500, g.getResponseBodyErr(500, restErr))
+		return
+	}
+}
+
+func (g *JSONHandler) setModelID(
+	c *gin.Context,
+	model interface{},
+) (err error) {
+	// Get model name
+	modelName := refutils.ModelName(model)
+
+	// modelID should be a url parameter as a ''
+	modelID := c.Param(modelName)
+	if modelID == "" {
+		err = errors.New("Incorrect model route path provided.")
+		return err
+	}
+
+	// SetID for given model
+	err = forms.SetID(model, modelID)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (g *JSONHandler) getResponseBodyErr(
