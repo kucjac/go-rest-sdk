@@ -11,7 +11,7 @@ import (
 	"net/http"
 )
 
-func GorillaMuxIDSetFunc(
+func GorillaMuxSetIDFunc(
 	req *http.Request,
 	model interface{},
 ) (err error) {
@@ -39,5 +39,5 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	return h.WithSetIDFunc(GorillaMuxIDSetFunc), nil
+	return h.WithSetIDFunc(GorillaMuxSetIDFunc), nil
 }

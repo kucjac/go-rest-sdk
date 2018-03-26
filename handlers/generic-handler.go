@@ -51,7 +51,8 @@ func New(repo repository.Repository,
 }
 
 func (c *GenericHandler) New() *GenericHandler {
-	return &(*c)
+	h := *c
+	return &h
 }
 
 func (c *GenericHandler) WithQueryPolicy(policy *forms.Policy) *GenericHandler {

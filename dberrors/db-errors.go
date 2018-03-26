@@ -5,6 +5,14 @@ import (
 	"fmt"
 )
 
+// Converter is an interface that defines the form
+// of converting third-party database errors into uniform
+// dberrors.Error. The returned errors should be based on the
+// prototypes provided in this package.
+type Converter interface {
+	Convert(err error) *Error
+}
+
 // Error is a unified Database Error.
 //
 // This package contain error prototypes with name starting with Err...
@@ -31,7 +39,7 @@ func (d *Error) Compare(err Error) bool {
 }
 
 // GetPrototype returns the Error prototype on which the
-// 'd' *Error entity was built.
+// given database *Error entity was built.
 func (d *Error) GetPrototype() (Error, error) {
 	proto, ok := prototypeMap[d.ID]
 	if !ok {
@@ -45,12 +53,17 @@ func (d *Error) Error() string {
 	return fmt.Sprintf("%s: %s", d.Title, d.Message)
 }
 
-// New creates new *Error copy of the Error
+// New creates a copy of the given *Error
+// Only ID and Title fields are copied to new Error
+// the Message should be unique for given situation.
+// Used on prototypes to create Prototype based Errors
 func (d Error) New() *Error {
 	return d.new()
 }
 
 // NewWithMessage creates new *Error copy of the Error with additional message.
+// Used on prototypes to create new prototype based Error containing
+// a situation specific message based on the given argument.
 func (d Error) NewWithMessage(message string) (err *Error) {
 	err = d.new()
 	err.Message = message
@@ -59,6 +72,8 @@ func (d Error) NewWithMessage(message string) (err *Error) {
 
 // NewWithError creates new Error copy based on the Error with a message.
 // The message is an Error value from 'err' argument.
+// Used on prototypes to create new prototype based Error containing
+// a situation specific message based on provided error.
 func (d Error) NewWithError(err error) (dbError *Error) {
 	dbError = d.new()
 	dbError.Message = err.Error()
@@ -67,9 +82,4 @@ func (d Error) NewWithError(err error) (dbError *Error) {
 
 func (d Error) new() *Error {
 	return &Error{ID: d.ID, Title: d.Title}
-}
-
-// Converter is an interface that converts errors into *Error
-type Converter interface {
-	Convert(err error) *Error
 }

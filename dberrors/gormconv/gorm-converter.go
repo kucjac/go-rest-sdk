@@ -9,6 +9,9 @@ import (
 	"github.com/kucjac/go-rest-sdk/dberrors/sqliteconv"
 )
 
+// GORMConverter defines error converter for multiple databases drivers
+// used by the 'gorm' package.
+// Implements 'Converter' interface.
 type GORMConverter struct {
 	converter dberrors.Converter
 }
