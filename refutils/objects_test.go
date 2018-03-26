@@ -61,7 +61,7 @@ func TestGetType(t *testing.T) {
 		obj := &Foo{Bar: "bar"}
 
 		Convey("We obtain a type Foo", func() {
-			fooType := getType(obj)
+			fooType := GetType(obj)
 
 			So(fooType, ShouldEqual, reflect.TypeOf(Foo{}))
 		})
@@ -75,7 +75,7 @@ func TestGetType(t *testing.T) {
 		obj := &obj3
 
 		Convey("We again obtain a type of Foo", func() {
-			fooType := getType(obj)
+			fooType := GetType(obj)
 
 			So(reflect.New(fooType).Elem().Interface(), ShouldHaveSameTypeAs, Foo{})
 		})
@@ -157,6 +157,61 @@ func TestSliceOfPtrType(t *testing.T) {
 				Convey("The slice should be empty", func() {
 					So(len(typedSlice), ShouldEqual, 0)
 				})
+			})
+		})
+	})
+}
+
+func TestPtrSliceOfPtrType(t *testing.T) {
+	Convey("Subject: Create new *[]*Model for given interface{} 'Model'", t, func() {
+		Convey("Having some record of type Foo", func() {
+			foo := Foo{Bar: "bar"}
+
+			Convey(`The PtrSliceOfPtrType on the 'Foo' entity,
+			 should return non nil *[]*Foo`, func() {
+				returned := PtrSliceOfPtrType(foo)
+
+				So(returned, ShouldHaveSameTypeAs, &[]*Foo{})
+				typed := returned.(*[]*Foo)
+				So(typed, ShouldNotBeNil)
+			})
+		})
+	})
+}
+
+func TestSliceOfType(t *testing.T) {
+	Convey("Subject: Create new []Model for given interface 'model'", t, func() {
+		Convey("Having some record of type Foo", func() {
+			foo := Foo{Bar: "bar"}
+
+			Convey(`The SliceOfType on given record should return []Foo slice.`, func() {
+				returned := SliceOfType(foo)
+
+				_, ok := returned.([]Foo)
+				So(ok, ShouldBeTrue)
+			})
+		})
+	})
+}
+
+func TestModelName(t *testing.T) {
+	Convey(`Subject: Retrieve pluralized (for slices), lowercased model name
+	 for any provided model`, t, func() {
+		Convey("Having some record of type Foo", func() {
+			fooRecord := Foo{Bar: "bar"}
+
+			Convey("ModelName function should return lowercased 'foo'", func() {
+				name := ModelName(fooRecord)
+
+				So(name, ShouldEqual, "foo")
+			})
+		})
+		Convey("Having some slice of type Foo", func() {
+			fooSlice := []Foo{}
+
+			Convey("ModelName should return pluralized and lowercased 'foos'", func() {
+				name := ModelName(fooSlice)
+				So(name, ShouldEqual, "foos")
 			})
 		})
 	})

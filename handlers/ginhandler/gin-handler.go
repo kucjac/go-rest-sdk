@@ -10,7 +10,6 @@ import (
 	"github.com/kucjac/go-rest-sdk/repository"
 	"github.com/kucjac/go-rest-sdk/response"
 	"github.com/kucjac/go-rest-sdk/resterrors"
-	"strings"
 )
 
 // JSONHandler the policies are set manually
@@ -97,22 +96,11 @@ func (g *JSONHandler) Create(model interface{}) gin.HandlerFunc {
 // The model is taken from the repository based on its id and name
 func (g *JSONHandler) Get(model interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get model name
-		modelName := strings.ToLower(refutils.StructName(model))
-
-		// modelID should be a url parameter as a ''
-		modelID := c.Param(modelName)
-		if modelID == "" {
-			restErr := resterrors.ErrInternalError.New()
-			c.JSON(500, g.getResponseBodyErr(500, restErr))
-			return
-		}
 
 		// create new object entity based on the model
 		obj := refutils.ObjOfPtrType(model)
 
-		// Set the model ID
-		err := forms.SetID(obj, modelID)
+		err := g.setModelID(c, obj)
 		if err != nil {
 			c.Error(err)
 			restErr := resterrors.ErrInternalError.New()
@@ -293,15 +281,14 @@ func (g *JSONHandler) handleDBError(
 			c.Error(err)
 			isInternal = true
 			restErr = resterrors.ErrInternalError.New()
+		} else {
+			isInternal = restErr.Compare(resterrors.ErrInternalError)
 		}
-
-		if !isInternal {
-			if isInternal = restErr.Compare(resterrors.ErrInternalError); !isInternal {
-				c.JSON(400, g.getResponseBodyErr(400, restErr))
-				return
-			}
+		if isInternal {
+			c.JSON(500, g.getResponseBodyErr(500, restErr))
+		} else {
+			c.JSON(400, g.getResponseBodyErr(400, restErr))
 		}
-		c.JSON(500, g.getResponseBodyErr(500, restErr))
 		return
 	}
 }

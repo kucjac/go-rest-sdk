@@ -7,7 +7,7 @@ import (
 	"github.com/kucjac/go-rest-sdk/errhandler"
 	"github.com/kucjac/go-rest-sdk/forms"
 	"github.com/kucjac/go-rest-sdk/repository"
-	"github.com/kucjac/go-rest-sdk/repository/mocks"
+	"github.com/kucjac/go-rest-sdk/repository/mockrepo"
 	"github.com/kucjac/go-rest-sdk/response"
 	"github.com/kucjac/go-rest-sdk/resterrors"
 	. "github.com/smartystreets/goconvey/convey"
@@ -42,7 +42,7 @@ func TestNew(t *testing.T) {
 
 		Convey(`Having some repository that implements repository.Repository 
 			and error handler the correct json handler should be created`, func() {
-			repo := &mocks.MockRepository{}
+			repo := &mockrepo.MockRepository{}
 			errHandler := errhandler.New()
 			gjh1, err = New(repo, errHandler, nil)
 
@@ -52,7 +52,7 @@ func TestNew(t *testing.T) {
 		})
 
 		Convey("If either repository or error handler is not provided an error would be returned", func() {
-			repo := &mocks.MockRepository{}
+			repo := &mockrepo.MockRepository{}
 			var nilErrHandler *errhandler.ErrorHandler = nil
 
 			var nilRepo repository.Repository = nil
@@ -74,7 +74,7 @@ func TestNew(t *testing.T) {
 		})
 
 		Convey("The responseBody argument may be nil, in such a case the default *DefaultBody would be used.", func() {
-			repo := &mocks.MockRepository{}
+			repo := &mockrepo.MockRepository{}
 			errHandler := errhandler.New()
 			var body response.Responser
 
@@ -90,7 +90,7 @@ func TestNew(t *testing.T) {
 func TestWithResponseBody(t *testing.T) {
 	Convey("Subject: Setting responseBody with callback method WithResponseBody", t, func() {
 		Convey("Having some JSONHandler with default responseBody", func() {
-			handler, _ := New(&mocks.MockRepository{}, errhandler.New(), nil)
+			handler, _ := New(&mockrepo.MockRepository{}, errhandler.New(), nil)
 
 			So(handler.responseBody, ShouldResemble, &response.DefaultBody{})
 			Convey(`Using WithResponseBody() method sets the responseBody as in the argument and returns given handler as callback`, func() {
@@ -121,7 +121,7 @@ func TestCreateHandlerfunc(t *testing.T) {
 
 			errHandler = errhandler.New()
 
-			repo := &mocks.MockRepository{}
+			repo := &mockrepo.MockRepository{}
 			policy = &forms.Policy{FailOnError: true}
 
 			gjh, err = New(repo, errHandler, nil)
@@ -253,7 +253,7 @@ func TestGetHandlerfunc(t *testing.T) {
 
 		Convey("Having a ginJSONHandler and some gin router", func() {
 			router = gin.New()
-			repo := &mocks.MockRepository{}
+			repo := &mockrepo.MockRepository{}
 			errHandler = errhandler.New()
 
 			gjh, err = New(repo, errHandler, nil)
@@ -391,7 +391,7 @@ func TestListHandlerfunc(t *testing.T) {
 		var gjh *JSONHandler
 		var errHandler *errhandler.ErrorHandler
 		var router *gin.Engine
-		var repo *mocks.MockRepository = &mocks.MockRepository{}
+		var repo *mockrepo.MockRepository = &mockrepo.MockRepository{}
 		var req *http.Request
 		var rw *httptest.ResponseRecorder
 
@@ -562,7 +562,7 @@ func TestUpdateHandlerfunc(t *testing.T) {
 		var gjh *JSONHandler
 		var errHandler *errhandler.ErrorHandler = errhandler.New()
 		var router *gin.Engine
-		var repo *mocks.MockRepository = &mocks.MockRepository{}
+		var repo *mockrepo.MockRepository = &mockrepo.MockRepository{}
 		var req *http.Request
 		var rw *httptest.ResponseRecorder
 		var policy *forms.Policy = &forms.Policy{FailOnError: true}
@@ -725,7 +725,7 @@ func TestPatchHandlerfunc(t *testing.T) {
 		var handler *JSONHandler
 		var errHandler *errhandler.ErrorHandler = errhandler.New()
 		var router *gin.Engine
-		var repo *mocks.MockRepository = &mocks.MockRepository{}
+		var repo *mockrepo.MockRepository = &mockrepo.MockRepository{}
 		var req *http.Request
 		var rw *httptest.ResponseRecorder
 		var policy *forms.Policy = &forms.Policy{FailOnError: true}
@@ -903,7 +903,7 @@ func TestDeleteHandlerfunc(t *testing.T) {
 		var handler *JSONHandler
 		var errHandler *errhandler.ErrorHandler = errhandler.New()
 		var router *gin.Engine
-		var repo *mocks.MockRepository = &mocks.MockRepository{}
+		var repo *mockrepo.MockRepository = &mockrepo.MockRepository{}
 		var req *http.Request
 		var rw *httptest.ResponseRecorder
 		// var policy *forms.Policy = &forms.Policy{FailOnError: true}
@@ -974,7 +974,7 @@ func TestDeleteHandlerfunc(t *testing.T) {
 func TestGetResponseBody(t *testing.T) {
 	Convey("Subject: Test getResponseBody method for *JSONHandler", t, func() {
 
-		repo := &mocks.MockRepository{}
+		repo := &mockrepo.MockRepository{}
 		errHandler := errhandler.New()
 		Convey(`Having a JSONHandler with responseBody that 
 			doesn't implement StatusResponser`, func() {

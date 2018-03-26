@@ -2,7 +2,7 @@ go-rest-sdk
 =============
 package that contains basic RESTful API structures.
 
-[![Build Status](https://travis-ci.org/kucjac/rest-response.svg?branch=master)](https://travis-ci.org/kucjac/rest-response)
+[![Build Status](https://travis-ci.org/kucjac/go-rest-sdk.svg?branch=master)](https://travis-ci.org/kucjac/go-rest-sdk)
 [![Coverage Status](https://coveralls.io/repos/github/kucjac/rest-response/badge.svg?branch=master)](https://coveralls.io/github/kucjac/rest-response?branch=master)
 [![Godoc](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://godoc.org/github.com/kucjac/rest-response)
 [![license](http://img.shields.io/badge/license-MIT-red.svg?style=flat)](https://raw.githubusercontent.com/kucjac/rest-response/master/LICENSE)

@@ -21,11 +21,23 @@ type Policy struct {
 	Tag         string
 }
 
+type ListPolicy struct {
+	Policy
+	DefaultLimit int
+	WithCount    bool
+}
+
 var (
 	DefaultPolicy = Policy{
 		TaggedOnly:  false,
 		FailOnError: false,
 		Tag:         "form",
+	}
+
+	DefaultListPolicy = ListPolicy{
+		Policy:       DefaultPolicy,
+		DefaultLimit: 10,
+		WithCount:    true,
 	}
 )
 
@@ -44,10 +56,6 @@ func BindQuery(req *http.Request, model interface{}, policy *Policy) error {
 	if err != nil {
 		return err
 	}
-	return nil
-}
-
-func BindParams(parameters map[string][]string, model interface{}, policy *Policy) error {
 	return nil
 }
 
