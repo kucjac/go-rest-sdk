@@ -26,9 +26,9 @@ func New(session *mgo.Session, dbName string) (repo *MGORepository, err error) {
 }
 
 func (m *MGORepository) Create(req interface{}) (dbErr *dberrors.Error) {
-	err = m.collection(req).Insert(req)
+	err := m.collection(req).Insert(req)
 	if err != nil {
-		return dbErr
+		return m.converter.Convert(err)
 	}
 	return nil
 }
