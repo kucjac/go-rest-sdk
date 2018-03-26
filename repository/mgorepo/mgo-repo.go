@@ -25,7 +25,7 @@ func New(session *mgo.Session, dbName string) (repo *MGORepository, err error) {
 
 }
 
-func (m *MGORepository) Create(req interface{}) (err error) {
+func (m *MGORepository) Create(req interface{}) (dbErr *dberrors.Error) {
 	err = m.collection(req).Insert(req)
 	if err != nil {
 		return err
@@ -33,7 +33,7 @@ func (m *MGORepository) Create(req interface{}) (err error) {
 	return nil
 }
 
-func (m *MGORepository) Get(req interface{}) (res interface{}, err error) {
+func (m *MGORepository) Get(req interface{}) (res interface{}, dbErr *dberrors.Error) {
 	/**
 
 	TO DO
@@ -44,7 +44,7 @@ func (m *MGORepository) Get(req interface{}) (res interface{}, err error) {
 
 func (m *MGORepository) List(
 	req interface{},
-) (res []interface{}, err error) {
+) (res []interface{}, dbErr *dberrors.Error) {
 	/**
 
 	TO DO
@@ -55,7 +55,7 @@ func (m *MGORepository) List(
 
 func (m *MGORepository) ListWithParams(
 	req interface{}, listParameters *repository.ListParameters,
-) (res []interface{}, err error) {
+) (res []interface{}, dbErr *dberrors.Error) {
 	/**
 
 	TO DO
@@ -64,7 +64,9 @@ func (m *MGORepository) ListWithParams(
 	return
 }
 
-func (m *MGORepository) Update(req interface{}) (err error) {
+func (m *MGORepository) Count(req interface{}) (count int, err *dberrors.Error)
+
+func (m *MGORepository) Update(req interface{}) (dbErr *dberrors.Error) {
 	/**
 
 	TO DO
@@ -73,7 +75,7 @@ func (m *MGORepository) Update(req interface{}) (err error) {
 	return
 }
 
-func (m *MGORepository) Patch(req, where interface{}) (err error) {
+func (m *MGORepository) Patch(req, where interface{}) (dbErr *dberrors.Error) {
 	/**
 
 	TO DO
@@ -82,7 +84,7 @@ func (m *MGORepository) Patch(req, where interface{}) (err error) {
 	return
 }
 
-func (m *MGORepository) Delete(req, where interface{}) (err error) {
+func (m *MGORepository) Delete(req, where interface{}) (dbErr *dberrors.Error) {
 	/**
 
 	TO DO
