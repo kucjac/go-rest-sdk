@@ -28,7 +28,7 @@ func New(session *mgo.Session, dbName string) (repo *MGORepository, err error) {
 func (m *MGORepository) Create(req interface{}) (dbErr *dberrors.Error) {
 	err = m.collection(req).Insert(req)
 	if err != nil {
-		return err
+		return dbErr
 	}
 	return nil
 }
@@ -39,6 +39,7 @@ func (m *MGORepository) Get(req interface{}) (res interface{}, dbErr *dberrors.E
 	TO DO
 
 	*/
+
 	return
 }
 
@@ -50,6 +51,7 @@ func (m *MGORepository) List(
 	TO DO
 
 	*/
+
 	return
 }
 
@@ -61,10 +63,19 @@ func (m *MGORepository) ListWithParams(
 	TO DO
 
 	*/
+
 	return
 }
 
-func (m *MGORepository) Count(req interface{}) (count int, err *dberrors.Error)
+func (m *MGORepository) Count(req interface{}) (count int, err *dberrors.Error) {
+	/**
+
+	TO DO
+
+	*/
+
+	return
+}
 
 func (m *MGORepository) Update(req interface{}) (dbErr *dberrors.Error) {
 	/**
@@ -72,6 +83,7 @@ func (m *MGORepository) Update(req interface{}) (dbErr *dberrors.Error) {
 	TO DO
 
 	*/
+
 	return
 }
 
