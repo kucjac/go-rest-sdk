@@ -63,7 +63,11 @@ type Error struct {
 
 // New creates new *Error entity that is a copy of given Error prototype.
 func (r Error) New() *Error {
-	return &Error{Code: r.Code, Title: r.Title, Status: r.Status, Detail: r.Detail.copy()}
+	rest := &Error{Code: r.Code, Title: r.Title, Status: r.Status}
+	if r.Detail != nil {
+		rest.Detail = r.Detail.copy()
+	}
+	return rest
 }
 
 // AddLink adds the link to the Error Category.

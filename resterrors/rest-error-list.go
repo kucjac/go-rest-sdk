@@ -7,6 +7,12 @@ package resterrors
 
 // List of REST API errors
 var (
+	ErrWarning = Error{
+		Code: "WAR001", Title: "Warning",
+		Detail: &Detail{Title: "The warning notification occured."},
+		Status: "200",
+	}
+
 	// STATUS 400 - CODE: 'BRQXXX'
 	ErrHeadersNotSupported = Error{
 		Code: "BRQ001", Title: "Condition headers not supported",

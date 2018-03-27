@@ -4,76 +4,93 @@ import (
 	"errors"
 	"github.com/kucjac/go-rest-sdk/dberrors"
 	"github.com/kucjac/go-rest-sdk/resterrors"
+	"sync"
 )
 
-var defaultErrorMap map[dberrors.Error]*resterrors.Error = map[dberrors.Error]*resterrors.Error{
-	dberrors.ErrWarning:               nil,
-	dberrors.ErrNoResult:              resterrors.ErrResourceNotFound.New(),
-	dberrors.ErrConnExc:               resterrors.ErrInternalError.New(),
-	dberrors.ErrCardinalityViolation:  resterrors.ErrInternalError.New(),
-	dberrors.ErrDataException:         resterrors.ErrInvalidInput.New(),
-	dberrors.ErrIntegrConstViolation:  resterrors.ErrInvalidInput.New(),
-	dberrors.ErrRestrictViolation:     resterrors.ErrInvalidInput.New(),
-	dberrors.ErrNotNullViolation:      resterrors.ErrInvalidInput.New(),
-	dberrors.ErrForeignKeyViolation:   resterrors.ErrInvalidInput.New(),
-	dberrors.ErrUniqueViolation:       resterrors.ErrInvalidInput.New(),
-	dberrors.ErrCheckViolation:        resterrors.ErrInvalidInput.New(),
-	dberrors.ErrInvalidTransState:     resterrors.ErrInternalError.New(),
-	dberrors.ErrInvalidTransTerm:      resterrors.ErrInternalError.New(),
-	dberrors.ErrTransRollback:         resterrors.ErrInternalError.New(),
-	dberrors.ErrTxDone:                resterrors.ErrInternalError.New(),
-	dberrors.ErrInvalidAuthorization:  resterrors.ErrInsufficientAccPerm.New(),
-	dberrors.ErrInvalidPassword:       resterrors.ErrInternalError.New(),
-	dberrors.ErrInvalidSchemaName:     resterrors.ErrInternalError.New(),
-	dberrors.ErrInvalidSyntax:         resterrors.ErrInternalError.New(),
-	dberrors.ErrInsufficientPrivilege: resterrors.ErrInsufficientAccPerm.New(),
-	dberrors.ErrInsufficientResources: resterrors.ErrInternalError.New(),
-	dberrors.ErrProgramLimitExceeded:  resterrors.ErrInternalError.New(),
-	dberrors.ErrSystemError:           resterrors.ErrInternalError.New(),
-	dberrors.ErrInternalError:         resterrors.ErrInternalError.New(),
-	dberrors.ErrUnspecifiedError:      resterrors.ErrInternalError.New(),
+// DefaultErrorMap contain default mapping of dberrors.Error prototype into
+// resterrors.Error. It is used by default by 'ErrorHandler' if created using New() function.
+var DefaultErrorMap map[dberrors.Error]resterrors.Error = map[dberrors.Error]resterrors.Error{
+	dberrors.ErrNoResult:              resterrors.ErrResourceNotFound,
+	dberrors.ErrConnExc:               resterrors.ErrInternalError,
+	dberrors.ErrCardinalityViolation:  resterrors.ErrInternalError,
+	dberrors.ErrDataException:         resterrors.ErrInvalidInput,
+	dberrors.ErrIntegrConstViolation:  resterrors.ErrInvalidInput,
+	dberrors.ErrRestrictViolation:     resterrors.ErrInvalidInput,
+	dberrors.ErrNotNullViolation:      resterrors.ErrInvalidInput,
+	dberrors.ErrForeignKeyViolation:   resterrors.ErrInvalidInput,
+	dberrors.ErrUniqueViolation:       resterrors.ErrInvalidInput,
+	dberrors.ErrCheckViolation:        resterrors.ErrInvalidInput,
+	dberrors.ErrInvalidTransState:     resterrors.ErrInternalError,
+	dberrors.ErrInvalidTransTerm:      resterrors.ErrInternalError,
+	dberrors.ErrTransRollback:         resterrors.ErrInternalError,
+	dberrors.ErrTxDone:                resterrors.ErrInternalError,
+	dberrors.ErrInvalidAuthorization:  resterrors.ErrInsufficientAccPerm,
+	dberrors.ErrInvalidPassword:       resterrors.ErrInternalError,
+	dberrors.ErrInvalidSchemaName:     resterrors.ErrInternalError,
+	dberrors.ErrInvalidSyntax:         resterrors.ErrInternalError,
+	dberrors.ErrInsufficientPrivilege: resterrors.ErrInsufficientAccPerm,
+	dberrors.ErrInsufficientResources: resterrors.ErrInternalError,
+	dberrors.ErrProgramLimitExceeded:  resterrors.ErrInternalError,
+	dberrors.ErrSystemError:           resterrors.ErrInternalError,
+	dberrors.ErrInternalError:         resterrors.ErrInternalError,
+	dberrors.ErrUnspecifiedError:      resterrors.ErrInternalError,
 }
 
-// ErrorHandler is a handler that
+// ErrorHandler defines the database dberrors.Error one-to-one mapping
+// into resterrors.Error. The default error mapping is defined
+// in package variable 'DefaultErrorMap'.
+//
 type ErrorHandler struct {
-	dbToRest map[dberrors.Error]*resterrors.Error
+	dbToRest map[dberrors.Error]resterrors.Error
+	sync.RWMutex
 }
 
-// NewErrorHandler
+// NewErrorHandler creates new error handler with already inited ErrorMap
 func New() *ErrorHandler {
-	return &ErrorHandler{dbToRest: defaultErrorMap}
+	return &ErrorHandler{dbToRest: DefaultErrorMap}
 }
 
-// Handle
-func (r *ErrorHandler) Handle(dberr *dberrors.Error,
-) (resterr *resterrors.Error, err error) {
-	var proto dberrors.Error
-	var ok bool
-
+// Handle enables dberrors.Error handling so that proper resterrors.Error is returned.
+// It returns resterror.Error if given database error exists in the private error mapping.
+// If provided dberror doesn't have prototype or no mapping exists for given dberrors.Error an
+// application 'error' would be returned.
+// Thread safety by using RWMutex.RLock
+func (r *ErrorHandler) Handle(dberr *dberrors.Error) (*resterrors.Error, error) {
 	// Get the prototype for given dberr
-	proto, err = dberr.GetPrototype()
+	dbProto, err := dberr.GetPrototype()
 	if err != nil {
 		return nil, err
 	}
 
 	// Get Rest
-	resterr, ok = r.dbToRest[proto]
+	r.RLock()
+	restProto, ok := r.dbToRest[dbProto]
+	r.RUnlock()
 	if !ok {
 		err = errors.New("Given database error is unrecognised by the handler")
 		return nil, err
 	}
 
+	// // Create new entity
+	resterr := restProto.New()
 	return resterr, nil
 }
 
-// LoadCustomErrorMap
-func (r *ErrorHandler) LoadCustomErrorMap(errorMap map[dberrors.Error]*resterrors.Error,
-) {
+// LoadCustomErrorMap enables replacement of the ErrorHandler default error map.
+// This operation is thread safe - with RWMutex.Lock
+func (r *ErrorHandler) LoadCustomErrorMap(errorMap map[dberrors.Error]resterrors.Error) {
+	r.Lock()
 	r.dbToRest = errorMap
+	r.Unlock()
 }
 
-// UpdateErrorMapEntry
-func (r *ErrorHandler) UpdateErrorEntry(dberr dberrors.Error,
-	resterr *resterrors.Error) {
+// UpdateErrorMapEntry changes single entry in the Error Handler error map.
+// This operation is thread safe - with RWMutex.Lock
+func (r *ErrorHandler) UpdateErrorEntry(
+	dberr dberrors.Error,
+	resterr resterrors.Error,
+) {
+	r.Lock()
 	r.dbToRest[dberr] = resterr
+	r.Unlock()
 }

@@ -40,8 +40,9 @@ func (d *Error) Compare(err Error) bool {
 
 // GetPrototype returns the Error prototype on which the
 // given database *Error entity was built.
-func (d *Error) GetPrototype() (Error, error) {
-	proto, ok := prototypeMap[d.ID]
+func (d *Error) GetPrototype() (proto Error, err error) {
+	var ok bool
+	proto, ok = prototypeMap[d.ID]
 	if !ok {
 		return proto, errors.New("ID field not found or unrecognisable")
 	}

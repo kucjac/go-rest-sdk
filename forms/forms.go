@@ -3,6 +3,7 @@ package forms
 import (
 	"encoding/json"
 	"errors"
+	"github.com/kucjac/go-rest-sdk/refutils"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -45,6 +46,11 @@ type IDSetter interface {
 	SetID(id uint64)
 }
 
+// ParamGetterFunc defines the function that retrieve the parameters
+// from the specific third-party routing framework on the base
+// of the provided parameterName string and req *http.Request
+type ParamGetterFunc func(paramName string, req *http.Request) (string, error)
+
 // BindQuery binds the url Query
 // for the given request to the provided model
 func BindQuery(req *http.Request, model interface{}, policy *Policy) error {
@@ -70,6 +76,26 @@ func BindJSON(req *http.Request, model interface{}, policy *Policy) error {
 		return err
 	}
 	return nil
+}
+
+// BindParams binds the provided provided model to the parameters
+// retrieved using getParam function
+func BindParams(
+	req *http.Request,
+	model interface{},
+	getParam ParamGetterFunc,
+	policy *Policy,
+) error {
+	modelName := refutils.ModelName(model)
+	modelID, err := getParam(modelName, req)
+	if err != nil {
+		return err
+	}
+
+	if err = SetID(model, modelID); err != nil {
+		return err
+	}
+
 }
 
 // SetID sets the ID of provided model.
@@ -198,6 +224,41 @@ func mapForm(ptr interface{}, form map[string][]string, policy *Policy) error {
 		}
 	}
 	return nil
+}
+
+func mapParam(ptr interface{}, getParam ParamGetterFunc, req *http.Request, policy *Policy) error {
+	// Get type of pointer
+	t := reflect.TypeOf(ptr).Elem()
+
+	// Get value of pointer
+	v := reflect.ValueOf(ptr).Elem()
+
+	for i := 0; i < t.NumField(); i++ {
+		tField := t.Field(i)
+		sField := v.Field(i)
+
+		// Check if field is settable - can be addresable or is public
+		if !sField.CanSet() {
+			continue
+		}
+
+		sFieldKind := sField.Kind()
+
+		// Check if the field has a tag query
+		paramTag := tField.Tag.Get(policy.Tag)
+
+		// If tag is set to '-' don't map values
+		if paramTag == "-" {
+			continue
+		} else if paramTag == "" {
+			if !policy.TaggedOnly {
+				paramTag = strings.ToLower(tField.Name)
+			} else {
+				continue
+			}
+		} 
+
+		paramValue, ok := getParam(paramTag, req)
 }
 
 // setFieldWithType sets given 'field' of 'fieldKind' with value 'val'.

@@ -12,7 +12,7 @@ func TestNew(t *testing.T) {
 		errorHandler := New()
 
 		Convey("The newly created handler use defaultErrorMap by default", func() {
-			So(errorHandler.dbToRest, ShouldResemble, defaultErrorMap)
+			So(errorHandler.dbToRest, ShouldResemble, DefaultErrorMap)
 
 		})
 	})
@@ -23,27 +23,31 @@ func TestLoadCustomErrorMap(t *testing.T) {
 		errorHandler := New()
 
 		Convey("And a prepared custom error map with a custom resterror", func() {
-			customError := &resterrors.Error{Code: "C123", Title: "Custom rest error"}
+			customError := resterrors.Error{Code: "C123", Title: "Custom rest error"}
 
-			customMap := map[dberrors.Error]*resterrors.Error{
+			customMap := map[dberrors.Error]resterrors.Error{
 				dberrors.ErrUnspecifiedError: customError,
 			}
+			So(customMap, ShouldNotBeNil)
 
 			Convey("For given Error some Error should be returned.", func() {
 				someError := dberrors.ErrUnspecifiedError.New()
+				So(someError, ShouldNotBeNil)
 				prevRestErr, err := errorHandler.Handle(someError)
+
 				So(err, ShouldBeNil)
 				So(prevRestErr, ShouldNotBeNil)
 
 				FocusConvey("While loading custom error map containing given error pair", func() {
 					errorHandler.LoadCustomErrorMap(customMap)
+					So(errorHandler.dbToRest, ShouldResemble, customMap)
+					So(errorHandler, ShouldNotBeNil)
 
 					FocusConvey("Given Error would return different Error", func() {
-
 						afterRestErr, err := errorHandler.Handle(someError)
 						So(err, ShouldBeNil)
 						So(afterRestErr, ShouldNotResemble, prevRestErr)
-						So(afterRestErr, ShouldResemble, customError)
+						So(afterRestErr.Compare(customError), ShouldBeTrue)
 					})
 				})
 
@@ -57,7 +61,7 @@ func TestUpdateErrorEntry(t *testing.T) {
 	Convey("Having a ErrorHandler containing default error map", t, func() {
 		errorHandler := New()
 
-		So(errorHandler.dbToRest, ShouldResemble, defaultErrorMap)
+		So(errorHandler.dbToRest, ShouldResemble, DefaultErrorMap)
 
 		Convey("Getting a *Error for given Error", func() {
 			someErrorProto := dberrors.ErrCheckViolation
@@ -67,17 +71,17 @@ func TestUpdateErrorEntry(t *testing.T) {
 			So(err, ShouldBeNil)
 
 			Convey("While using UpdateErrorMapEntry method on the errorHandler.", func() {
-				customError := &resterrors.Error{ID: "1234", Title: "My custom Error"}
+				customError := resterrors.Error{ID: "1234", Title: "My custom Error"}
 
 				errorHandler.UpdateErrorEntry(someErrorProto, customError)
 
-				FocusConvey(`Handling again given Error would result 
+				FocusConvey(`Handling again given Error would result
 					with different *Error entity`, func() {
 					afterRestErr, err := errorHandler.Handle(someError)
 
 					So(err, ShouldBeNil)
 					So(afterRestErr, ShouldNotResemble, prevRestErr)
-					So(afterRestErr, ShouldResemble, customError)
+					So(afterRestErr.Compare(customError), ShouldBeTrue)
 				})
 
 			})
@@ -92,7 +96,7 @@ func TestHandle(t *testing.T) {
 		Convey("And a *Error based on the basic Error prototype", func() {
 			someError := dberrors.ErrUniqueViolation.New()
 
-			Convey(`Then handling given *Error would result 
+			Convey(`Then handling given *Error would result
 				with some *Error entity`, func() {
 				restError, err := errorHandler.Handle(someError)
 
@@ -113,21 +117,17 @@ func TestHandle(t *testing.T) {
 			})
 		})
 
-		Convey(`If we set a non default error map, 
+		Convey(`If we set a non default error map,
 			that may not contain every Error entry as a key`, func() {
 			someErrorProto := dberrors.ErrSystemError
-			customErrorMap := map[dberrors.Error]*resterrors.Error{
+			customErrorMap := map[dberrors.Error]resterrors.Error{
 				someErrorProto: {ID: "1921", Title: "Some Error"},
 			}
 			errorHandler.LoadCustomErrorMap(customErrorMap)
 
-			Convey(`Then handling a *Error based on the basic Error prototype that is not in 
-				the custom error map, would throw an internal error 
+			Convey(`Then handling a *Error based on the basic Error prototype that is not in
+				the custom error map, would throw an internal error
 				and a nil *Error.`, func() {
-				restError, err := errorHandler.Handle(someErrorProto.New())
-
-				So(err, ShouldBeNil)
-				So(restError, ShouldHaveSameTypeAs, &resterrors.Error{})
 
 				someDBFromProto := dberrors.ErrInvalidSyntax.New()
 				otherError, err := errorHandler.Handle(someDBFromProto)
