@@ -1,6 +1,7 @@
 package forms
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"github.com/kucjac/go-rest-sdk/refutils"
@@ -22,10 +23,18 @@ type Policy struct {
 	Tag         string
 }
 
+// ListPolicy is a set of rules how Binding should operate
+// on the 'List' type model
 type ListPolicy struct {
 	Policy
 	DefaultLimit int
 	WithCount    bool
+}
+
+// ParamPolicy represents policy how BindParam should operate
+type ParamPolicy struct {
+	Policy
+	DeepSearch bool
 }
 
 var (
@@ -39,6 +48,15 @@ var (
 		Policy:       DefaultPolicy,
 		DefaultLimit: 10,
 		WithCount:    true,
+	}
+
+	DefaultParamPolicy = ParamPolicy{
+		Policy: Policy{
+			TaggedOnly:  false,
+			FailOnError: false,
+			Tag:         "param",
+		},
+		DeepSearch: false,
 	}
 )
 
@@ -84,7 +102,7 @@ func BindParams(
 	req *http.Request,
 	model interface{},
 	getParam ParamGetterFunc,
-	policy *Policy,
+	policy *ParamPolicy,
 ) error {
 	modelName := refutils.ModelName(model)
 	modelID, err := getParam(modelName, req)
@@ -92,10 +110,22 @@ func BindParams(
 		return err
 	}
 
-	if err = SetID(model, modelID); err != nil {
-		return err
-	}
+	var idAlreadySet bool
 
+	//If given model implements IDSetter, set ID  using SetID method
+	if setter, ok := model.(IDSetter); ok {
+		uintID, err := strconv.ParseUint(modelID, 10, 64)
+		if err != nil {
+			return err
+		}
+		setter.SetID(uintID)
+
+		if !policy.DeepSearch {
+			return nil
+		}
+		idAlreadySet = true
+	}
+	return mapParam(model, getParam, req, idAlreadySet, modelID, policy)
 }
 
 // SetID sets the ID of provided model.
@@ -135,6 +165,13 @@ func SetID(model interface{}, id string) error {
 		}
 	}
 	return ErrIncorrectModel
+}
+
+// fieldValue is a helper struct that contains a pair of reflect.StructField
+// with its reflect.Value
+type fieldValue struct {
+	Field reflect.StructField
+	Value reflect.Value
 }
 
 func mapForm(ptr interface{}, form map[string][]string, policy *Policy) error {
@@ -226,39 +263,130 @@ func mapForm(ptr interface{}, form map[string][]string, policy *Policy) error {
 	return nil
 }
 
-func mapParam(ptr interface{}, getParam ParamGetterFunc, req *http.Request, policy *Policy) error {
-	// Get type of pointer
-	t := reflect.TypeOf(ptr).Elem()
+//mapParameters from the url
+func mapParam(
+	model interface{},
+	getParam ParamGetterFunc,
+	req *http.Request,
+	idAlreadySet bool,
+	modelID string,
+	policy *ParamPolicy,
+) error {
 
-	// Get value of pointer
-	v := reflect.ValueOf(ptr).Elem()
+	// fields is a fieldValue chan that contains all structure  fields with corresponding values
+	mapParameter := func(ctx context.Context, fieldValues <-chan fieldValue) <-chan error {
+		errChan := make(chan error)
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					errChan <- context.Canceled
+					return
+				case fv, ok := <-fieldValues:
+					if !ok {
+						return
+					}
+					tField := fv.Field
+					sField := fv.Value
 
-	for i := 0; i < t.NumField(); i++ {
-		tField := t.Field(i)
-		sField := v.Field(i)
+					// Check if field is settable - can be addresable or is public
+					if !sField.CanSet() {
+						break
+					}
 
-		// Check if field is settable - can be addresable or is public
-		if !sField.CanSet() {
-			continue
-		}
+					sFieldKind := sField.Kind()
 
-		sFieldKind := sField.Kind()
+					// Check if the field has a tag query
+					paramTag := tField.Tag.Get(policy.Tag)
 
-		// Check if the field has a tag query
-		paramTag := tField.Tag.Get(policy.Tag)
+					// If tag is set to '-' don't map values
+					if paramTag == "-" {
+						break
+					} else if paramTag == "" {
+						// if the policy doesn't require tagged only fields
+						// set the paramTag value as lowercased field.Name
+						if !policy.TaggedOnly {
+							paramTag = strings.ToLower(tField.Name)
+						} else {
+							break
+						}
+					}
 
-		// If tag is set to '-' don't map values
-		if paramTag == "-" {
-			continue
-		} else if paramTag == "" {
-			if !policy.TaggedOnly {
-				paramTag = strings.ToLower(tField.Name)
-			} else {
-				continue
+					// if paramtag value is id and ID was not already set
+					// treat this field as ID
+					if !idAlreadySet && paramTag == "id" {
+						err := setFieldWithType(sFieldKind, modelID, sField)
+						if err != nil {
+							errChan <- err
+							return
+						}
+						if !policy.DeepSearch {
+							return
+						}
+						idAlreadySet = true
+					}
+
+					// if given paramtag value gives any
+					paramValue, err := getParam(paramTag, req)
+					if err != nil {
+						// if an error occured check what is the param policy
+						if policy.FailOnError {
+							errChan <- err
+							return
+						}
+
+						// if policy allows errors continue to the next field
+						break
+					}
+
+					if paramValue == "" {
+						break
+					}
+
+					// If everything seems
+					err = setFieldWithType(sFieldKind, paramValue, sField)
+					if err != nil {
+						if policy.FailOnError {
+							errChan <- err
+							return
+						}
+					}
+				}
 			}
-		} 
+		}()
+		return errChan
+	}
 
-		paramValue, ok := getParam(paramTag, req)
+	for err := range mapParameter(req.Context(), buildFields(req.Context(), model)) {
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func buildFields(ctx context.Context, model interface{}) <-chan fieldValue {
+	fields := make(chan fieldValue)
+	go func() {
+		defer close(fields)
+
+		// Get type of pointer
+		t := reflect.TypeOf(model).Elem()
+
+		// Get value of pointer
+		v := reflect.ValueOf(model).Elem()
+
+		for i := 0; i < t.NumField(); i++ {
+			fv := fieldValue{Field: t.Field(i), Value: v.Field(i)}
+			select {
+			case <-ctx.Done():
+				return
+			case fields <- fv:
+			}
+		}
+	}()
+	return fields
 }
 
 // setFieldWithType sets given 'field' of 'fieldKind' with value 'val'.
