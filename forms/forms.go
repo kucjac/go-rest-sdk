@@ -1,11 +1,9 @@
 package forms
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"github.com/kucjac/go-rest-sdk/refutils"
-	"github.com/smartystreets/goconvey/convey"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -105,28 +103,8 @@ func BindParams(
 	getParam ParamGetterFunc,
 	policy *ParamPolicy,
 ) error {
-	modelName := refutils.ModelName(model)
-	modelID, err := getParam(modelName, req)
-	if err != nil {
-		return err
-	}
 
-	var idAlreadySet bool
-
-	//If given model implements IDSetter, set ID  using SetID method
-	if setter, ok := model.(IDSetter); ok {
-		uintID, err := strconv.ParseUint(modelID, 10, 64)
-		if err != nil {
-			return err
-		}
-		setter.SetID(uintID)
-
-		if !policy.DeepSearch {
-			return nil
-		}
-		idAlreadySet = true
-	}
-	return mapParam(model, getParam, req, idAlreadySet, modelID, policy)
+	return mapParam(model, getParam, req, policy)
 }
 
 // SetID sets the ID of provided model.
@@ -269,141 +247,107 @@ func mapParam(
 	model interface{},
 	getParam ParamGetterFunc,
 	req *http.Request,
-	idAlreadySet bool,
-	modelID string,
 	policy *ParamPolicy,
 ) error {
 
-	// fields is a fieldValue chan that contains all structure  fields with corresponding values
-	mapParameter := func(ctx context.Context, fieldValues <-chan fieldValue) <-chan error {
-		errChan := make(chan error)
-		go func() {
-			for {
-				select {
-				case <-ctx.Done():
-					errChan <- context.Canceled
-					return
-				case fv, ok := <-fieldValues:
-					if !ok {
-						return
-					}
-					tField := fv.Field
-					sField := fv.Value
-
-					// Check if field is settable - can be addresable or is public
-					if !sField.CanSet() {
-						break
-					}
-
-					sFieldKind := sField.Kind()
-
-					// Check if the field has a tag query
-					paramTag := tField.Tag.Get(policy.Tag)
-
-					// If tag is set to '-' don't map values
-					if paramTag == "-" {
-						break
-					} else if paramTag == "" {
-						// if the policy doesn't require tagged only fields
-						// set the paramTag value as lowercased field.Name
-						if !policy.TaggedOnly {
-							paramTag = strings.ToLower(tField.Name)
-						} else {
-							break
-						}
-					}
-
-					// if paramtag value is id and ID was not already set
-					// treat this field as ID
-					if !idAlreadySet && paramTag == "id" {
-						err := setFieldWithType(sFieldKind, modelID, sField)
-						if err != nil {
-							errChan <- err
-							return
-						}
-						if !policy.DeepSearch {
-							return
-						}
-						idAlreadySet = true
-					}
-
-					// if given paramtag value gives any
-					paramValue, err := getParam(paramTag, req)
-					if err != nil {
-						// if an error occured check what is the param policy
-						if policy.FailOnError {
-							errChan <- err
-							return
-						}
-
-						// if policy allows errors continue to the next field
-						break
-					}
-
-					if paramValue == "" {
-						break
-					}
-
-					// If everything seems
-					err = setFieldWithType(sFieldKind, paramValue, sField)
-					if err != nil {
-						if policy.FailOnError {
-							errChan <- err
-							return
-						}
-					}
-				}
-			}
-		}()
-		return errChan
+	modelName := refutils.ModelName(model)
+	modelID, err := getParam(modelName, req)
+	if err != nil {
+		return err
 	}
 
-	paramChan := mapParameter(req.Context(), buildFields(req.Context(), model))
+	var idAlreadySet bool
 
-	for {
-		select {
-		case err, ok := <-paramChan:
-			if ok {
-				if err != nil {
-					return err
-				}
+	//If given model implements IDSetter, set ID  using SetID method
+	if setter, ok := model.(IDSetter); ok {
+		uintID, err := strconv.ParseUint(modelID, 10, 64)
+		if err != nil {
+			return err
+		}
+		setter.SetID(uintID)
+
+		if !policy.DeepSearch {
+			return nil
+		}
+		idAlreadySet = true
+	}
+
+	// Get type of pointer
+	t := reflect.TypeOf(model).Elem()
+
+	// Get value of pointer
+	v := reflect.ValueOf(model).Elem()
+
+	for i := 0; i < t.NumField(); i++ {
+
+		tField := t.Field(i)
+		sField := v.Field(i)
+
+		// Check if field is settable - can be addresable or is public
+		if !sField.CanSet() {
+			continue
+		}
+
+		sFieldKind := sField.Kind()
+
+		// Check if the field has a tag query
+		paramTag := tField.Tag.Get(policy.Tag)
+
+		// If tag is set to '-' don't map values
+		if paramTag == "-" {
+			continue
+		} else if paramTag == "" {
+			// if the policy doesn't require tagged only fields
+			// set the paramTag value as lowercased field.Name
+			if !policy.TaggedOnly {
+				paramTag = strings.ToLower(tField.Name)
 			} else {
-				if idAlreadySet {
-					return nil
-				} else {
-					return ErrIncorrectModel
-				}
+				continue
 			}
-		case <-req.Context().Done():
-			return context.Canceled
+		}
+
+		// if paramtag value is id and ID was not already set
+		// treat this field as ID
+		if !idAlreadySet && paramTag == "id" {
+			err := setFieldWithType(sFieldKind, modelID, sField)
+			if err != nil {
+				return err
+			}
+			if !policy.DeepSearch {
+				return nil
+			}
+			idAlreadySet = true
+		}
+
+		// if given paramtag value gives any
+		paramValue, err := getParam(paramTag, req)
+		if err != nil {
+			// if an error occured check what is the param policy
+			if policy.FailOnError {
+				return err
+			}
+
+			// if policy allows errors continue to the next field
+			continue
+		}
+
+		if paramValue == "" {
+			continue
+		}
+
+		// If everything seems
+		err = setFieldWithType(sFieldKind, paramValue, sField)
+		if err != nil {
+			if policy.FailOnError {
+				return err
+			}
 		}
 	}
 
+	if !idAlreadySet {
+		return ErrIncorrectModel
+	}
 	return nil
-}
-
-func buildFields(ctx context.Context, model interface{}) <-chan fieldValue {
-	fields := make(chan fieldValue)
-	go func() {
-		defer close(fields)
-
-		// Get type of pointer
-		t := reflect.TypeOf(model).Elem()
-
-		// Get value of pointer
-		v := reflect.ValueOf(model).Elem()
-
-		for i := 0; i < t.NumField(); i++ {
-			fv := fieldValue{Field: t.Field(i), Value: v.Field(i)}
-			select {
-			case <-ctx.Done():
-				return
-			case fields <- fv:
-				convey.Println("Adding field value")
-			}
-		}
-	}()
-	return fields
 }
 
 // setFieldWithType sets given 'field' of 'fieldKind' with value 'val'.
