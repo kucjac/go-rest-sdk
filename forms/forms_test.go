@@ -2,6 +2,7 @@ package forms
 
 import (
 	. "github.com/smartystreets/goconvey/convey"
+	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
@@ -328,8 +329,24 @@ func TestMapParams(t *testing.T) {
 	Convey("Subject: Map parameters to the given model", t, func() {
 		Convey("Having some model that implements IDSetter interface", func() {
 			model := IDSetterModel{}
+			req := httptest.NewRequest("GET", "/url", nil)
+			policy := &DefaultParamPolicy
 
-			mapParam(model, getParam, req, policy)
+			err := mapParam(model, emptyGetParamFunc, req, policy)
+			So(err, ShouldBeNil)
 		})
 	})
+}
+
+func getParamFuncWithValues(
+	paramValues map[string]string,
+) ParamGetterFunc {
+	return func(paramName string, req *http.Request) (string, error) {
+		value := paramValues[paramName]
+		return value, nil
+	}
+}
+
+func emptyGetParamFunc(param string, req *http.Request) (string, error) {
+	return "", nil
 }
