@@ -1,6 +1,7 @@
 package forms
 
 import (
+	"context"
 	. "github.com/smartystreets/goconvey/convey"
 	"net/http/httptest"
 	"reflect"
@@ -23,6 +24,12 @@ type IDSetterModel struct {
 
 func (m *IDSetterModel) SetID(id uint64) {
 	m.ID = id
+}
+
+type ModelWithID struct {
+	ID    int
+	Name  string
+	BarID int `param:"bar"`
 }
 
 func TestMapForm(t *testing.T) {
@@ -316,5 +323,35 @@ func TestSetID(t *testing.T) {
 			})
 		})
 	})
-
 }
+
+// func TestBuildFields(t *testing.T) {
+// 	Convey("Subject: build fieldValue stream", t, func() {
+// 		ctx := context.Background()
+// 		var cancel context.CancelFunc
+// 		ctx, cancel = context.WithTimeout(ctx, 1*time.Second)
+// 		defer cancel()
+// 		Convey("Having some context and some model", func() {
+
+// 			model := ModelWithID{ID: 1, Name: "Maciek", BarID: 0}
+
+// 			fields := buildFields(ctx, &model)
+
+// 			var i int
+// 		loop:
+// 			for {
+// 				select {
+// 				case _, ok := <-fields:
+// 					if ok {
+// 						i++
+// 					} else {
+// 						break loop
+// 					}
+// 				}
+// 			}
+// 			Println(i)
+// 			time.Sleep(500 * time.Microsecond)
+// 			So(len(fields), ShouldEqual, 3)
+// 		})
+// 	})
+// }

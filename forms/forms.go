@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/kucjac/go-rest-sdk/refutils"
+	"github.com/smartystreets/goconvey/convey"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -357,8 +358,8 @@ func mapParam(
 		return errChan
 	}
 
-	paramChan := mapParameter(req.Context(), buildFields(req.Context(), model)) {
-		
+	paramChan := mapParameter(req.Context(), buildFields(req.Context(), model))
+
 	for {
 		select {
 		case err, ok := <-paramChan:
@@ -368,10 +369,10 @@ func mapParam(
 				}
 			} else {
 				if idAlreadySet {
-					return nil	
+					return nil
 				} else {
 					return ErrIncorrectModel
-				}			
+				}
 			}
 		case <-req.Context().Done():
 			return context.Canceled
@@ -398,6 +399,7 @@ func buildFields(ctx context.Context, model interface{}) <-chan fieldValue {
 			case <-ctx.Done():
 				return
 			case fields <- fv:
+				convey.Println("Adding field value")
 			}
 		}
 	}()
