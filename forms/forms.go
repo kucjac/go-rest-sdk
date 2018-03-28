@@ -357,9 +357,24 @@ func mapParam(
 		return errChan
 	}
 
-	for err := range mapParameter(req.Context(), buildFields(req.Context(), model)) {
-		if err != nil {
-			return err
+	paramChan := mapParameter(req.Context(), buildFields(req.Context(), model)) {
+		
+	for {
+		select {
+		case err, ok := <-paramChan:
+			if ok {
+				if err != nil {
+					return err
+				}
+			} else {
+				if idAlreadySet {
+					return nil	
+				} else {
+					return ErrIncorrectModel
+				}			
+			}
+		case <-req.Context().Done():
+			return context.Canceled
 		}
 	}
 
