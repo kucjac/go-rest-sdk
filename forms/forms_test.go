@@ -1,6 +1,7 @@
 package forms
 
 import (
+	"errors"
 	. "github.com/smartystreets/goconvey/convey"
 	"net/http"
 	"net/http/httptest"
@@ -26,10 +27,17 @@ func (m *IDSetterModel) SetID(id uint64) {
 	m.ID = id
 }
 
+type ModelWithParam struct {
+	ID   int    `param:"fieldorf"`
+	Name string `param:"naming"`
+}
+
 type ModelWithID struct {
-	ID    int
-	Name  string
-	BarID int `param:"bar"`
+	ID           int
+	Name         string
+	BarID        int `param:"bar"`
+	privateField string
+	NotIncluded  string `param:"-"`
 }
 
 func TestMapForm(t *testing.T) {
@@ -332,9 +340,163 @@ func TestMapParams(t *testing.T) {
 			req := httptest.NewRequest("GET", "/url", nil)
 			policy := &DefaultParamPolicy
 
-			err := mapParam(model, emptyGetParamFunc, req, policy)
+			err := mapParam(&model, emptyGetParamFunc, req, policy)
+			So(err, ShouldBeError)
+
+			valueMap := map[string]string{"idsettermodel": "15001900"}
+
+			err = mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
+
 			So(err, ShouldBeNil)
+			So(model.ID, ShouldEqual, 15001900)
+
+			model = IDSetterModel{}
+
+			policy.DeepSearch = true
+			err = mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
+
+			So(err, ShouldBeNil)
+			So(model.ID, ShouldEqual, 15001900)
 		})
+
+		Convey("Having a model that contains params and private fields", func() {
+			model := ModelWithID{}
+			req := httptest.NewRequest("GET", "/", nil)
+			policy := &DefaultParamPolicy
+			policy.TaggedOnly = true
+
+			valueMap := map[string]string{"modelwithid": "1501", "bar": "1234"}
+			err := mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
+			So(err, ShouldBeError)
+
+			policy.TaggedOnly = false
+			policy.DeepSearch = false
+
+			Convey("For ID value not set with different parameter", func() {
+				valueMap = map[string]string{"id": "1230"}
+				err = mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
+				So(err, ShouldBeError)
+			})
+
+			Convey("For ID Value setteble with 'modelwithid' param", func() {
+				valueMap = map[string]string{"modelwithid": "1123"}
+				err = mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
+				So(err, ShouldBeNil)
+				So(model.ID, ShouldEqual, 1123)
+
+				model.ID = 0
+
+				policy.DeepSearch = true
+				err = mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
+				So(err, ShouldBeNil)
+				So(model.ID, ShouldEqual, 1123)
+			})
+		})
+		Convey("For ID value with different param than model name", func() {
+			req := httptest.NewRequest("GET", "/", nil)
+			model := ModelWithParam{}
+			valueMap := map[string]string{"fieldorf": "1234"}
+			policy := &DefaultParamPolicy
+			policy.DeepSearch = true
+			err := mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
+			So(err, ShouldBeNil)
+			So(model.ID, ShouldEqual, 1234)
+
+			Convey("If a param contain incorrect value for given type ", func() {
+				valueMap = map[string]string{"fieldorf": "maciek"}
+				policy.FailOnError = true
+
+				err := mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
+				So(err, ShouldBeError)
+			})
+		})
+
+		Convey(`Having some model and some errors occurs during 
+			getting param with ParamGetterFunc`, func() {
+			req := httptest.NewRequest("GET", "/", nil)
+			model := ModelWithID{}
+			errorMap := map[string]error{
+				"modelwithid": errors.New("Some error"),
+			}
+
+			err := mapParam(&model, getParamErrFunc(errorMap), req, &DefaultParamPolicy)
+			So(err, ShouldBeError)
+
+			errorMap = map[string]error{
+				"fieldorf": errors.New("Some error."),
+			}
+			paramModel := ModelWithParam{}
+			policy := &DefaultParamPolicy
+			policy.DeepSearch = true
+			err = mapParam(&paramModel, getParamErrFunc(errorMap), req, policy)
+			So(err, ShouldBeError)
+
+			policy.FailOnError = false
+			err = mapParam(&paramModel, getParamErrFunc(errorMap), req, policy)
+			So(err, ShouldBeError)
+		})
+
+		Convey("Having Default param policy and param containing model name", func() {
+			model := ModelWithID{}
+			req := httptest.NewRequest("GET", "/", nil)
+
+			policy := &DefaultParamPolicy
+			valueMap := map[string]string{"modelwithid": "1234"}
+
+			err := mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
+			So(err, ShouldBeNil)
+			So(model.ID, ShouldEqual, 1234)
+
+		})
+
+	})
+}
+
+func TestSetFieldWithType(t *testing.T) {
+	Convey("Having some interface or struct value", t, func() {
+		fks := []reflect.Kind{reflect.Slice, reflect.Interface, reflect.Struct}
+
+		for _, fk := range fks {
+			err := setFieldWithType(fk, "1234", reflect.Zero(reflect.TypeOf(fk)))
+			So(err, ShouldBeError)
+			So(err, ShouldEqual, ErrUnknownType)
+		}
+	})
+}
+
+func TestSetFloadField(t *testing.T) {
+	Convey("Having incorrect value for float type value", t, func() {
+		err := setFloatField("mietek", reflect.Zero(reflect.TypeOf(0.123)), 64)
+		So(err, ShouldBeError)
+	})
+}
+
+func TestTimeField(t *testing.T) {
+	Convey("Having some struct with time field", t, func() {
+		type SomeStruct struct {
+			TimeField time.Time
+		}
+		ss := SomeStruct{}
+		t := reflect.TypeOf(ss)
+		v := reflect.ValueOf(ss)
+		for i := 0; i < t.NumField(); i++ {
+			tField := t.Field(i)
+			vField := v.Field(i)
+			setTimeField("124120", tField, vField)
+		}
+
+		type structWithParam struct {
+			TimeField time.Time `time_format:"someformat" time_utc:"true" time_location:"nolocation"`
+		}
+
+		sp := structWithParam{}
+		t = reflect.TypeOf(sp)
+		v = reflect.ValueOf(sp)
+		for i := 0; i < t.NumField(); i++ {
+			tField := t.Field(i)
+			vField := v.Field(i)
+			setTimeField("124120", tField, vField)
+		}
 	})
 }
 
@@ -349,4 +511,13 @@ func getParamFuncWithValues(
 
 func emptyGetParamFunc(param string, req *http.Request) (string, error) {
 	return "", nil
+}
+
+func getParamErrFunc(
+	paramErr map[string]error,
+) ParamGetterFunc {
+	return func(paramName string, req *http.Request) (string, error) {
+		err := paramErr[paramName]
+		return "", err
+	}
 }

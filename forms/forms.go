@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/kucjac/go-rest-sdk/refutils"
+	"log"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -289,6 +290,7 @@ func mapParam(
 		}
 
 		sFieldKind := sField.Kind()
+		lowerCasedName := strings.ToLower(tField.Name)
 
 		// Check if the field has a tag query
 		paramTag := tField.Tag.Get(policy.Tag)
@@ -300,23 +302,23 @@ func mapParam(
 			// if the policy doesn't require tagged only fields
 			// set the paramTag value as lowercased field.Name
 			if !policy.TaggedOnly {
-				paramTag = strings.ToLower(tField.Name)
+
+				// log.Printf("IsSet: %v, name: %v", idAlreadySet, llowerCasedName)
+				if !idAlreadySet && lowerCasedName == "id" {
+					err := setFieldWithType(sFieldKind, modelID, sField)
+					if err != nil {
+						return err
+					}
+					if !policy.DeepSearch {
+						return nil
+					}
+					idAlreadySet = true
+				} else {
+					paramTag = lowerCasedName
+				}
 			} else {
 				continue
 			}
-		}
-
-		// if paramtag value is id and ID was not already set
-		// treat this field as ID
-		if !idAlreadySet && paramTag == "id" {
-			err := setFieldWithType(sFieldKind, modelID, sField)
-			if err != nil {
-				return err
-			}
-			if !policy.DeepSearch {
-				return nil
-			}
-			idAlreadySet = true
 		}
 
 		// if given paramtag value gives any
@@ -337,10 +339,15 @@ func mapParam(
 
 		// If everything seems
 		err = setFieldWithType(sFieldKind, paramValue, sField)
+		log.Printf("field: %v, with value: %v", lowerCasedName, paramValue)
+
 		if err != nil {
 			if policy.FailOnError {
 				return err
 			}
+		}
+		if lowerCasedName == "id" {
+			idAlreadySet = true
 		}
 	}
 
@@ -393,15 +400,18 @@ func setFieldWithType(
 	default:
 		return ErrUnknownType
 	}
+	log.Printf("Error :%v", err)
 	return err
 }
 
 func setIntField(val string, field reflect.Value, bitSize int) (err error) {
 	var intValue int64
+	log.Printf("Value: %v, fieldname: %v", val, field)
 	intValue, err = strconv.ParseInt(val, 10, bitSize)
 	if err != nil {
 		return err
 	}
+
 	// Set value if no error
 	field.SetInt(intValue)
 	return nil
