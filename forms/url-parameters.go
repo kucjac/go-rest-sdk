@@ -105,6 +105,9 @@ func mapParam(
 				// if it is time field set it as a time
 				_, isTime := sField.Interface().(time.Time)
 				if isTime {
+					if (policy.TaggedOnly && paramTag == "") || paramTag == "" {
+						continue
+					}
 					err = paramSetTime(sField, tField, getParam, req, paramTag)
 					if policy.FailOnError && err != nil {
 						return err
@@ -133,7 +136,7 @@ func mapParam(
 					// Check if after dereferencing it is a of a type time.Time
 					_, isTime := sField.Elem().Interface().(time.Time)
 					if isTime {
-						if policy.TaggedOnly && paramTag == "" {
+						if (policy.TaggedOnly && paramTag == "") || paramTag == "" {
 							continue
 						}
 						err = paramSetTime(sField.Elem(), tField, getParam, req, paramTag)

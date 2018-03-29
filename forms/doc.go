@@ -7,7 +7,7 @@ of an application.
 This package enables binding queries, json forms and url params (third-party router/mux libraries)
 to the models of unknown type and unknown fields during the runtime of an application.
 
-Multiple functions were fetched from github.com/gin-gonic/gin/binding and enhanced with policies.
+Few functions were fetched from github.com/gin-gonic/gin/binding and enhanced with policies.
 The policies sets the rules for the binding functions mechanics.
 
 Binding functions:
@@ -38,10 +38,14 @@ The ParamPolicy enhances Policy with:
 			pair.
 
 
-Following default policies are provided to use:
+There are few default policies for different use purpose:
 	DefaultPolicy 		- default policy
 	DefaultJSONPolicy 	- default policy for binding JSON
 	DefaultListPolicy	- default policy containing List-Parameters
 	DefaultParamPolicy	- default policy for binding parameters.
+
+By default they are used in their purposed functions.
+In order to use a copy of these, just use New() method and a new copy would be returned.
+
 */
 package forms

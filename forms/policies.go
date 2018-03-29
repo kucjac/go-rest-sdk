@@ -8,6 +8,7 @@ type Policy struct {
 	Tag         string
 }
 
+// New creates a copy of the Policy
 func (p Policy) New() *Policy {
 	policy := &Policy{
 		TaggedOnly:  p.TaggedOnly,
@@ -25,6 +26,7 @@ type ListPolicy struct {
 	WithCount    bool
 }
 
+// New creates a copy of the list policy.
 func (p ListPolicy) New() *ListPolicy {
 	policy := &ListPolicy{
 		Policy:       *p.Policy.New(),
@@ -43,6 +45,7 @@ type ParamPolicy struct {
 	DeepSearch bool
 }
 
+// New creates a copy of the ParamPolicy
 func (p ParamPolicy) New() *ParamPolicy {
 	policy := &ParamPolicy{
 		Policy:     *p.Policy.New(),
