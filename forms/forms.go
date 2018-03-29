@@ -3,8 +3,6 @@ package forms
 import (
 	"encoding/json"
 	"errors"
-	"github.com/kucjac/go-rest-sdk/refutils"
-	"log"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -17,60 +15,23 @@ var (
 	ErrIncorrectModel = errors.New("Given model do not have ID field. In order to set ID, it should implement IDSetter or contain field ID")
 )
 
-type Policy struct {
-	TaggedOnly  bool
-	FailOnError bool
-	Tag         string
-}
-
-// ListPolicy is a set of rules how Binding should operate
-// on the 'List' type model
-type ListPolicy struct {
-	Policy
-	DefaultLimit int
-	WithCount    bool
-}
-
-// ParamPolicy represents policy how BindParam should operate
-type ParamPolicy struct {
-	Policy
-	DeepSearch bool
-}
-
-var (
-	DefaultPolicy = Policy{
-		TaggedOnly:  false,
-		FailOnError: false,
-		Tag:         "form",
-	}
-
-	DefaultListPolicy = ListPolicy{
-		Policy:       DefaultPolicy,
-		DefaultLimit: 10,
-		WithCount:    true,
-	}
-
-	DefaultParamPolicy = ParamPolicy{
-		Policy: Policy{
-			TaggedOnly:  false,
-			FailOnError: false,
-			Tag:         "param",
-		},
-		DeepSearch: false,
-	}
-)
-
+// IDSetter defines interface for data Models that allows
+// Setting the provided models ID.
+// Defines SetID() method.
 type IDSetter interface {
 	SetID(id uint64)
 }
 
-// ParamGetterFunc defines the function that retrieve the parameters
-// from the specific third-party routing framework on the base
-// of the provided parameterName string and req *http.Request
-type ParamGetterFunc func(paramName string, req *http.Request) (string, error)
-
 // BindQuery binds the url Query
 // for the given request to the provided model
+// The function mechanics is based on provided request URL Query
+// as well as model and Policy.
+// The policy defines if the query binding should search only for
+// the fields that contains tags, defines the tags and decides wether the
+// function should return an error if any occurs during operation.
+// If no policy is provided (or nil) the DefaultPolicy would be used.
+// By default the funciton binds any matched field, searches for the
+// 'form' tag and doesn't return errors.
 func BindQuery(req *http.Request, model interface{}, policy *Policy) error {
 	if policy == nil {
 		policy = &DefaultPolicy
@@ -83,10 +44,14 @@ func BindQuery(req *http.Request, model interface{}, policy *Policy) error {
 	return nil
 }
 
-// BindJSON binds the request body and decode it into provided model
+// BindJSON binds the reads the provided request body
+// and decode it into provided model.
+// If no policy arugment is used (nil) - than DefaultPolicy would be used.
+// The policy uses only FailOnError field - that decides wether the errors
+// should be returned
 func BindJSON(req *http.Request, model interface{}, policy *Policy) error {
 	if policy == nil {
-		policy = &DefaultPolicy
+		policy = &DefaultJSONPolicy
 	}
 	decoder := json.NewDecoder(req.Body)
 	err := decoder.Decode(model)
@@ -94,18 +59,6 @@ func BindJSON(req *http.Request, model interface{}, policy *Policy) error {
 		return err
 	}
 	return nil
-}
-
-// BindParams binds the provided provided model to the parameters
-// retrieved using getParam function
-func BindParams(
-	req *http.Request,
-	model interface{},
-	getParam ParamGetterFunc,
-	policy *ParamPolicy,
-) error {
-
-	return mapParam(model, getParam, req, policy)
 }
 
 // SetID sets the ID of provided model.
@@ -198,7 +151,6 @@ func mapForm(ptr interface{}, form map[string][]string, policy *Policy) error {
 				// if the policy is tagged only continue
 				continue
 			}
-
 		}
 
 		// Check if the query contains the tag
@@ -239,120 +191,6 @@ func mapForm(ptr interface{}, form map[string][]string, policy *Policy) error {
 				}
 			}
 		}
-	}
-	return nil
-}
-
-//mapParameters from the url
-func mapParam(
-	model interface{},
-	getParam ParamGetterFunc,
-	req *http.Request,
-	policy *ParamPolicy,
-) error {
-
-	modelName := refutils.ModelName(model)
-	modelID, err := getParam(modelName, req)
-	if err != nil {
-		return err
-	}
-
-	var idAlreadySet bool
-
-	//If given model implements IDSetter, set ID  using SetID method
-	if setter, ok := model.(IDSetter); ok {
-		uintID, err := strconv.ParseUint(modelID, 10, 64)
-		if err != nil {
-			return err
-		}
-		setter.SetID(uintID)
-
-		if !policy.DeepSearch {
-			return nil
-		}
-		idAlreadySet = true
-	}
-
-	// Get type of pointer
-	t := reflect.TypeOf(model).Elem()
-
-	// Get value of pointer
-	v := reflect.ValueOf(model).Elem()
-
-	for i := 0; i < t.NumField(); i++ {
-
-		tField := t.Field(i)
-		sField := v.Field(i)
-
-		// Check if field is settable - can be addresable or is public
-		if !sField.CanSet() {
-			continue
-		}
-
-		sFieldKind := sField.Kind()
-		lowerCasedName := strings.ToLower(tField.Name)
-
-		// Check if the field has a tag query
-		paramTag := tField.Tag.Get(policy.Tag)
-
-		// If tag is set to '-' don't map values
-		if paramTag == "-" {
-			continue
-		} else if paramTag == "" {
-			// if the policy doesn't require tagged only fields
-			// set the paramTag value as lowercased field.Name
-			if !policy.TaggedOnly {
-
-				// log.Printf("IsSet: %v, name: %v", idAlreadySet, llowerCasedName)
-				if !idAlreadySet && lowerCasedName == "id" {
-					err := setFieldWithType(sFieldKind, modelID, sField)
-					if err != nil {
-						return err
-					}
-					if !policy.DeepSearch {
-						return nil
-					}
-					idAlreadySet = true
-				} else {
-					paramTag = lowerCasedName
-				}
-			} else {
-				continue
-			}
-		}
-
-		// if given paramtag value gives any
-		paramValue, err := getParam(paramTag, req)
-		if err != nil {
-			// if an error occured check what is the param policy
-			if policy.FailOnError {
-				return err
-			}
-
-			// if policy allows errors continue to the next field
-			continue
-		}
-
-		if paramValue == "" {
-			continue
-		}
-
-		// If everything seems
-		err = setFieldWithType(sFieldKind, paramValue, sField)
-		log.Printf("field: %v, with value: %v", lowerCasedName, paramValue)
-
-		if err != nil {
-			if policy.FailOnError {
-				return err
-			}
-		}
-		if lowerCasedName == "id" {
-			idAlreadySet = true
-		}
-	}
-
-	if !idAlreadySet {
-		return ErrIncorrectModel
 	}
 	return nil
 }
@@ -400,13 +238,11 @@ func setFieldWithType(
 	default:
 		return ErrUnknownType
 	}
-	log.Printf("Error :%v", err)
 	return err
 }
 
 func setIntField(val string, field reflect.Value, bitSize int) (err error) {
 	var intValue int64
-	log.Printf("Value: %v, fieldname: %v", val, field)
 	intValue, err = strconv.ParseInt(val, 10, bitSize)
 	if err != nil {
 		return err
