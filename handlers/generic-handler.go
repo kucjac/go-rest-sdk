@@ -6,6 +6,7 @@ import (
 	"github.com/kucjac/go-rest-sdk/dberrors"
 	"github.com/kucjac/go-rest-sdk/errhandler"
 	"github.com/kucjac/go-rest-sdk/forms"
+	"github.com/kucjac/go-rest-sdk/logger"
 	"github.com/kucjac/go-rest-sdk/refutils"
 	"github.com/kucjac/go-rest-sdk/repository"
 	"github.com/kucjac/go-rest-sdk/response"
@@ -16,22 +17,47 @@ import (
 var (
 	ErrIncorrectModel         = errors.New("Incorrect model route path provided.")
 	ErrIncorrectCustomContext = errors.New("Incorrect custom context type.")
+	ErrNoParamGetterFuncSet   = errors.New("No ParamGetterFunc set.")
 )
 
+// GenericHandler is a structure that is used to build basic
+// CRUD operations for RESTful API's.
+//
+
 type GenericHandler struct {
-	repo          repository.Repository
-	errHandler    *errhandler.ErrorHandler
-	queryPolicy   *forms.Policy
-	jsonPolicy    *forms.Policy
-	listPolicy    *forms.ListPolicy
-	responseBody  response.Responser
-	idSetFunc     SetIDFunc
-	customContext interface{}
+	// repository for given handler
+	repo repository.Repository
+
+	errHandler *errhandler.ErrorHandler
+
+	// logger
+	log logger.GenericLogger
+
+	// queryPolicy - current policy for binding queries using BindQuery
+	queryPolicy *forms.Policy
+
+	// jsonPolicy - policy for binding json using BindJSON
+	jsonPolicy *forms.Policy
+
+	// listPolicy - policy used or bindings Lists
+	listPolicy *forms.ListPolicy
+
+	// paramPolicy - policy used for binding Parameters with BindParams
+	paramPolicy *forms.ParamPolicy
+
+	// responseBody - body used by in responses
+	responseBody response.Responser
+
+	// getParam - ParamGetterFunction used for getting parameters used by third-party routers
+	getParam forms.ParamGetterFunc
+
+	// with params specify if given route should bind parameters
+	withParams bool
 }
 
 type SetIDFunc func(req *http.Request, model interface{}) error
 
-// New creates JSONHandler for given
+// New creates GenericHandler for given
 func New(repo repository.Repository,
 	errHandler *errhandler.ErrorHandler,
 	responseBody response.Responser,
@@ -50,23 +76,51 @@ func New(repo repository.Repository,
 	return chiHandler, nil
 }
 
+// New creates a copy of given handler and returns it.
 func (c *GenericHandler) New() *GenericHandler {
 	h := *c
 	return &h
 }
 
+// WithQueryPolicy sets the query policy for given handler.
+// Returns given handler so it can be used in a callback manner
 func (c *GenericHandler) WithQueryPolicy(policy *forms.Policy) *GenericHandler {
 	c.queryPolicy = policy
 	return c
 }
 
+// WithJSONPolicy sets the policy used for BindJSON function.
+// Returns given handler so it can be used in a callback manner
 func (c *GenericHandler) WithJSONPolicy(policy *forms.Policy) *GenericHandler {
 	c.jsonPolicy = policy
 	return c
 }
 
+// WithListPolicy sets the police used in 'List' handler
+// Returns given handler so it can be used in a callback manner
 func (c *GenericHandler) WithListPolicy(policy *forms.ListPolicy) *GenericHandler {
 	c.listPolicy = policy
+	return c
+}
+
+// WithParamPolicy sets the param policy for given handler.
+// Returns given handler so it can be used in a callback manner
+func (c *GenericHandler) WithParamPolicy(policy *forms.ParamPolicy) *GenericHandler {
+	c.paramPolicy = policy
+	return c
+}
+
+// WithParams sets the given handler so that is binds the routing parameters to the model.
+// Returns given handler so it can be used in a callback manner
+func (c *GenericHandler) WithParams(useParams bool) *GenericHandler {
+	c.withParams = useParams
+	return c
+}
+
+// WithParamGetterFunc sets the ParamGetterFunc for given handler.
+// Returns given handler so it can be used in a callback manner
+func (c *GenericHandler) WithParamGetterFunc(getParam forms.ParamGetterFunc) *GenericHandler {
+	c.getParam = getParam
 	return c
 }
 
@@ -78,10 +132,37 @@ func (c *GenericHandler) WithSetIDFunc(
 }
 
 // Create is a chiHandler HandlerFunc for creating new restful model records
+// if the flag 'withParams' is set to true and no getParam is set for handler
+// the handler will panic
 func (c *GenericHandler) Create(model interface{}) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		var status int
 		obj := refutils.ObjOfPtrType(model)
+
+		// Set parameter if withParams flag is set to true
+		if c.withParams {
+
+			// if no getParam function set
+			if c.getParam == nil {
+				c.log.Errorf("For %v, an error occurred: %v",
+					req.URL.Path, ErrNoParamGetterFuncSet)
+				restErr := resterrors.ErrInternalError.New()
+				status = 500
+				c.JSON(rw, req, status, c.getResponseBodyErr(status, restErr))
+				return
+			}
+
+			// bind params
+			err := forms.BindParams(req, model, c.getParam, c.paramPolicy)
+			// if error occured - either the policy FailOnError is set or cannot set
+			// other parameters
+			if err != nil {
+				restErr := resterrors.ErrInternalError.New()
+				status = 500
+				c.JSON(rw, req, status, c.getResponseBodyErr(status, restErr))
+				return
+			}
+		}
 		err := forms.BindJSON(req, obj, c.jsonPolicy)
 		if err != nil {
 			restErr := resterrors.ErrInvalidJSONDocument.New()
@@ -107,6 +188,7 @@ func (c *GenericHandler) Get(model interface{}) http.HandlerFunc {
 
 		obj := refutils.ObjOfPtrType(model)
 
+		forms.BindParams(req, model, getParam, policy)
 		err := c.idSetFunc(req, model)
 		if err != nil {
 			restErr := resterrors.ErrInternalError.New()
@@ -291,6 +373,7 @@ func (c *GenericHandler) JSON(
 		body = (&response.DefaultBody{}).NewErrored().WithErrors(resterrors.ErrInternalError.New())
 		status = 500
 		marshaledBody, _ = json.Marshal(body)
+		c.log.Errorf("On: %v route, an error occurred: %v", req.URL.Path, err)
 	}
 	rw.WriteHeader(status)
 	rw.Write(marshaledBody)
@@ -307,12 +390,14 @@ func (c *GenericHandler) handleDBError(
 	restErr, err := c.errHandler.Handle(dbError)
 	if err != nil {
 		isInternal = true
+		c.log.Errorf("Error while handling DBError: %v", err)
 		restErr = resterrors.ErrInternalError.New()
 	} else {
 		isInternal = restErr.Compare(resterrors.ErrInternalError)
 	}
 
 	if isInternal {
+		c.log.Errorf("On the route Database error: %v", dbError)
 		status = 500
 	} else {
 		status = 400
