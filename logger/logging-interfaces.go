@@ -54,11 +54,23 @@ type ShortLeveledLogger interface {
 // i.e.: 'Debugln' and 'Debug'.
 // It also adds all Print's methods.
 type ExtendedLeveledLogger interface {
-	LeveledLogger
-
 	Print(args ...interface{})
 	Printf(format string, args ...interface{})
 	Println(args ...interface{})
+
+	Debugf(format string, args ...interface{})
+	Infof(format string, args ...interface{})
+	Warningf(format string, args ...interface{})
+	Errorf(format string, args ...interface{})
+	Fatalf(format string, args ...interface{})
+	Panicf(format string, args ...interface{})
+
+	Debug(args ...interface{})
+	Info(args ...interface{})
+	Warning(args ...interface{})
+	Error(args ...interface{})
+	Fatal(args ...interface{})
+	Panic(args ...interface{})
 
 	Debugln(args ...interface{})
 	Infoln(args ...interface{})

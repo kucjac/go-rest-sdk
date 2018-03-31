@@ -65,65 +65,65 @@ func (e *extendedLogger) Panicln(args ...interface{})               {}
 
 type NonLogger struct{}
 
-func TestNewGenericLogger(t *testing.T) {
-	Convey("Subject: New Generic Logger.", t, func() {
+func TestNewLoggerWrapper(t *testing.T) {
+	Convey("Subject: New Logger Wrapper.", t, func() {
 		Convey("Having some loggers", func() {
 			loggers := []interface{}{&stdlogger{}, &leveledLogger{}, &shortLeveledLogger{}, &extendedLogger{}}
 
 			Convey(`If the logger implement possible interfaces,
-			 generic handler should be returned`, func() {
+			 wrapper handler should be returned`, func() {
 				for i, logger := range loggers {
-					generic, err := NewGenericLogger(logger)
-					So(generic, ShouldHaveSameTypeAs, &GenericLogger{})
+					wrapper, err := NewLoggerWrapper(logger)
+					So(wrapper, ShouldHaveSameTypeAs, &LoggerWrapper{})
 					So(err, ShouldBeNil)
-					generic = MustGetGenericLogger(logger)
-					So(generic, ShouldHaveSameTypeAs, &GenericLogger{})
-					So(i+1, ShouldEqual, generic.currentLogger)
+					wrapper = MustGetLoggerWrapper(logger)
+					So(wrapper, ShouldHaveSameTypeAs, &LoggerWrapper{})
+					So(i+1, ShouldEqual, wrapper.currentLogger)
 				}
 
 				Convey("The loggers should enter its case ", func() {
 					args := []interface{}{}
 					format := "some format"
 					for _, logger := range loggers {
-						generic := MustGetGenericLogger(logger)
-						generic.Print(args)
-						generic.Printf(format, args)
-						generic.Println(args)
+						wrapper := MustGetLoggerWrapper(logger)
+						wrapper.Print(args)
+						wrapper.Printf(format, args)
+						wrapper.Println(args)
 
-						generic.Debug(args)
-						generic.Debugf(format, args...)
-						generic.Debugln(args)
+						wrapper.Debug(args)
+						wrapper.Debugf(format, args...)
+						wrapper.Debugln(args)
 
-						generic.Info(args)
-						generic.Infof(format, args...)
-						generic.Infoln(args)
+						wrapper.Info(args)
+						wrapper.Infof(format, args...)
+						wrapper.Infoln(args)
 
-						generic.Warning(args)
-						generic.Warningf(format, args...)
-						generic.Warningln(args)
+						wrapper.Warning(args)
+						wrapper.Warningf(format, args...)
+						wrapper.Warningln(args)
 
-						generic.Error(args)
-						generic.Errorf(format, args)
-						generic.Errorln(args)
+						wrapper.Error(args)
+						wrapper.Errorf(format, args)
+						wrapper.Errorln(args)
 
-						generic.Fatal(args)
-						generic.Fatalf(format, args)
-						generic.Fatalln(args)
+						wrapper.Fatal(args)
+						wrapper.Fatalf(format, args)
+						wrapper.Fatalln(args)
 
-						generic.Panic(args)
-						generic.Panicf(format, args)
-						generic.Panicln(args)
+						wrapper.Panic(args)
+						wrapper.Panicf(format, args)
+						wrapper.Panicln(args)
 					}
 				})
 			})
 
 			Convey(`If logger doesn't implement any known interface`, func() {
 				unknownLogger := NonLogger{}
-				generic, err := NewGenericLogger(unknownLogger)
+				wrapper, err := NewLoggerWrapper(unknownLogger)
 				So(err, ShouldBeError)
-				So(generic, ShouldBeNil)
+				So(wrapper, ShouldBeNil)
 
-				So(func() { MustGetGenericLogger(unknownLogger) }, ShouldPanic)
+				So(func() { MustGetLoggerWrapper(unknownLogger) }, ShouldPanic)
 			})
 		})
 	})
@@ -149,19 +149,17 @@ func TestBuildLeveled(t *testing.T) {
 	})
 }
 
-func ExampleNewGenericLogger(t *testing.T) {
-	// Having some logger (i.e. BasicLogger)
+func ExampleNewLoggerWrapper(t *testing.T) {
+	// Having some logger (i.e. BasicLogger) that doesn't implement ExtendedLeveledLogger
 	basic := NewBasicLogger(os.Stdout, "", 0)
 
-	// It's worth to noting that BasicLogger doesn't implement ExtendedLeveledLogger
+	// In order to wrap it with LoggerWrapper use NewLoggerWrapper
+	// or MustGetLoggerWrapper functions
+	wrapper := MustGetLoggerWrapper(basic)
 
-	// In order to wrap it with GenericLogger use NewGenericLogger
-	// or MustGetGenericLogger functions
-	generic := MustGetGenericLogger(basic)
-
-	// while having it wrapped by using GenericLogger we can use the methods of
+	// while having it wrapped by using LoggerWrapper we can use the methods of
 	// ExtendedLeveledLogger
-	generic.Println("Have fun")
-	generic.Fatalln("This is the end...")
+	wrapper.Println("Have fun")
+	wrapper.Fatalln("This is the end...")
 
 }

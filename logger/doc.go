@@ -1,17 +1,18 @@
 /*
-package logger contains generic-logger, basic-logger and logging interfaces.
+package logger contains LoggerWrapper, BasicLogger and logging interfaces.
 
-Logging is very important Rest API feature.
-In order not to extort any specific logging package, a generic-logger has been created.
-GenericLogger is a wrapper around third-party loggers which must implement of three
-specified logging-interfaces.
-This solution allows to use prepared function that requieres logging
-using your favorite logger.
+In order not to extort any specific logging package, a LoggerWrapper has been created.
+LoggerWrapper wraps around third-party loggers that implement one of the logging-interfaces:
+	# StdLogger - standard library logger interface
+	# LeveledLogger - basic leveled logger interface
+	# ShortLeveledLogger - basic leveled logger interfaces with shortened method names
+	# ExtendedLeveledLogger - a fully leveled logger interface
 
-There is also BasicLogger logger that implements 'LeveledLogger' interface
-that is may be used as a default logger.
+This solution allows to use ExtendedLeveledLogger interface methods for most of the third-party
+logging packages.
+
+There is also BasicLogger logger that implements 'LeveledLogger' interface.
 It is very simple and lightweight implementation of leveled logger.
-
 */
 
 package logger
