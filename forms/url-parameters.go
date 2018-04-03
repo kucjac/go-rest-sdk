@@ -2,7 +2,6 @@ package forms
 
 import (
 	"github.com/kucjac/go-rest-sdk/refutils"
-	"log"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -34,28 +33,54 @@ func BindParams(
 	policy *ParamPolicy,
 ) error {
 	if policy == nil {
-		policy = &DefaultParamPolicy
+		return nil
 	}
-	return mapParam(model, getParam, req, policy)
+	return mapParam(model, getParam, req, policy, policy.SearchDepthLevel, "")
 }
 
 //mapParameters from the url
+// rules:
+//	- if policy idOnly iterate over the model and search for ID field and structures that are
+// 		in the range of SearchDepthLevel
+//	- By default the ID or 'Id' field is treated as an 'ID'. If the model contain different id
+// 		field name, then set the field tag as an 'id'. if ID is not used as an ID - taggit with '-'
+//	- if policy is TagOnly - iterate only over tagged fields.
+//	- If a struct field has a tag. Then it goes as a parameter name for the model's id. By defult
+//		model's id parameter is - model's name.
+//	- if FailOnError is true - then any error that will occur during binding would be returned
+//		otherwise the mapping would map the fields until the other rules allows it to continue.
+// 	- if SearchDepthLevel is greater than 0, then the mapping function allows to check nested
+//		the nested struct or ptr to struct fields recursively with decreased searchDepth level
+// 		decreased by one.
+//	- if the field is a slice, array or interface then it won't be taken into mapping.
 func mapParam(
 	model interface{},
 	getParam ParamGetterFunc,
 	req *http.Request,
 	policy *ParamPolicy,
+	searchDepthLevel int,
+	paramName string,
 ) error {
+	// idAlreadySet is control flag that defines if id was set
+	var idAlreadySet bool
 
-	modelName := refutils.ModelName(model)
-	modelID, err := getParam(modelName, req)
+	// if paramName is an empty string - set it by default as Model struct Name.
+	if paramName == "" {
+		paramName = refutils.ModelName(model)
+	}
+	// Get the parameter from the getParam function
+	modelID, err := getParam(paramName, req)
 	if err != nil {
 		return err
 	}
-	log.Printf("\n\n%v", modelName)
-	var idAlreadySet bool
 
-	//If given model implements IDSetter, set ID  using SetID method
+	// if there is no
+	if policy.IDOnly && modelID == "" {
+		return ErrIncorrectModel
+	}
+
+	// If given model implements IDSetter, set ID  using SetID method
+	// Returns if an error occurs or policy.IDOnly is true.
 	if setter, ok := model.(IDSetter); ok {
 		uintID, err := strconv.ParseUint(modelID, 10, 64)
 		if err != nil {
@@ -63,18 +88,19 @@ func mapParam(
 		}
 		setter.SetID(uintID)
 
-		if !policy.DeepSearch {
+		if policy.IDOnly && searchDepthLevel == 0 {
 			return nil
 		}
 		idAlreadySet = true
 	}
 
-	// Get type of pointer
+	// Get reflect.Type of model
 	t := reflect.TypeOf(model).Elem()
 
-	// Get value of pointer
+	// Get reflect.Value of model
 	v := reflect.ValueOf(model).Elem()
 
+	// iterate  over model fields
 	for i := 0; i < t.NumField(); i++ {
 
 		tField := t.Field(i)
@@ -92,134 +118,87 @@ func mapParam(
 		}
 
 		// Check if the field has a tag query
-		paramTag := tField.Tag.Get(policy.Tag)
+		fieldTag := tField.Tag.Get(policy.Tag)
 
 		// If tag is set to '-' don't map values
-		if paramTag == "-" {
+		if fieldTag == "-" || (fieldTag == "" && policy.TaggedOnly) {
 			continue
 		}
 
-		if policy.DeepSearch {
-			switch sField.Kind() {
-			case reflect.Struct:
-				// if it is time field set it as a time
-				_, isTime := sField.Interface().(time.Time)
-				if isTime {
-					if (policy.TaggedOnly && paramTag == "") || paramTag == "" {
-						continue
-					}
-					err = paramSetTime(sField, tField, getParam, req, paramTag)
-					if policy.FailOnError && err != nil {
-						return err
-					}
-					continue
-				}
-				// recursively seach provided struct
-				if !policy.TaggedOnly || policy.TaggedOnly && paramTag != "" {
-					err := mapParam(sField.Addr().Interface(), getParam, req, policy)
-					if policy.FailOnError && err != nil {
-						return err
-					}
-
-				}
-
+		// if sField is a Ptr check where it points to.
+		if sField.Kind() == reflect.Ptr {
+			switch tField.Type.Elem().Kind() {
+			case reflect.Ptr, reflect.Slice, reflect.Array, reflect.Interface:
 				continue
-
-			case reflect.Ptr:
-				// sField.Set(reflect.New(tField.Type.Elem()))
-				// the function allows only ptr of singular referenced elements
-				switch tField.Type.Elem().Kind() {
-				case reflect.Ptr, reflect.Slice, reflect.Array, reflect.Interface:
-					continue
-				case reflect.Struct:
-					sField.Set(reflect.New(tField.Type.Elem()))
-					// Check if after dereferencing it is a of a type time.Time
-					_, isTime := sField.Elem().Interface().(time.Time)
-					if isTime {
-						if (policy.TaggedOnly && paramTag == "") || paramTag == "" {
-							continue
-						}
-						err = paramSetTime(sField.Elem(), tField, getParam, req, paramTag)
-						if policy.FailOnError && err != nil {
-							return err
-						}
-					} else if !isTime {
-						err := mapParam(sField.Interface(), getParam, req, policy)
-						if policy.FailOnError && err != nil {
-							return err
-						}
-					}
-					continue
-				default:
-					if policy.TaggedOnly && paramTag == "" {
-						continue
-					}
-					sField.Set(reflect.New(tField.Type.Elem()))
-					sField = sField.Elem()
-				}
-
 			default:
+				// if the sField is nil - create new item of type given struct type
+				if sField.IsNil() && policy.SearchDepthLevel > 0 {
+					sField.Set(reflect.New(tField.Type.Elem()))
+				} else if policy.SearchDepthLevel <= 0 {
+					continue
+				}
+				sField = sField.Elem()
 			}
-		} else {
-			// if not deep search the function is looking only for the 'ID' field or field with
-			// param tagged 'id' that is of basic type
-			log.Printf("SfieldKind: %v", sField.Kind())
-			switch sField.Kind() {
-			case reflect.Struct:
+		}
+
+		// if the field is of Struct Type
+		if sField.Kind() == reflect.Struct {
+			// distinguish the
+			// if it is time field set it as a time
+			_, isTime := sField.Interface().(time.Time)
+			if isTime {
+				err = paramSetTime(sField, tField, getParam, req, fieldTag)
+				if err != nil && policy.FailOnError {
+					return err
+				}
 				continue
-			case reflect.Ptr:
-				switch tField.Type.Elem().Kind() {
-				case reflect.Ptr, reflect.Slice,
-					reflect.Array, reflect.Interface,
-					reflect.Struct:
-					continue
-				default:
-					sField.Set(reflect.New(tField.Type.Elem()))
-				}
-			default:
 			}
+
+			// search nested structs if and only if search depth level is greater than zero.
+			if searchDepthLevel > 0 {
+				// recursively seach provided struct with decreased search level
+				err := mapParam(sField.Addr().Interface(),
+					getParam, req, policy, searchDepthLevel-1, fieldTag)
+				// return error if occurs and policy allows it
+				if err != nil && policy.FailOnError {
+					return err
+				}
+			}
+			continue
 		}
 
 		var lowerCasedName string = strings.ToLower(tField.Name)
-		log.Println(lowerCasedName)
 
-		if paramTag == "" {
-			// if the policy doesn't require tagged only fields
-			// set the paramTag value as lowercased field.Name
-			log.Println("preparing")
-			if !policy.TaggedOnly {
-				log.Println("Went through")
-				// if given field is an id, which was not yet set
-				if !idAlreadySet && lowerCasedName == "id" && modelID != "" {
+		// if given field is an id, which was not yet set
+		if !idAlreadySet && modelID != "" && (lowerCasedName == "id" || fieldTag == "id") {
 
-					err := setFieldWithType(sField.Kind(), modelID, sField)
-					if err != nil {
-						return err
-					}
-
-					// Stop if DeepSearch parameter is false
-					if !policy.DeepSearch {
-						return nil
-					}
-
-					// if DeepSearch is true set idAlreadySet flag to true
-					idAlreadySet = true
-				} else {
-					paramTag = lowerCasedName
-				}
-			} else {
-				// if policy requires tag (TaggedOnly) continue with other fields
-				continue
+			err := setFieldWithType(sField.Kind(), modelID, sField)
+			if err != nil {
+				return err
 			}
+
+			// Stop if DeepSearch parameter is false
+			if policy.IDOnly && policy.SearchDepthLevel == 0 {
+				return nil
+			}
+
+			// if DeepSearch is true set idAlreadySet flag to true
+			idAlreadySet = true
+		} else if fieldTag == "" {
+			fieldTag = lowerCasedName
+		}
+
+		// if IDOnly rule is true - go to the next field
+		if policy.IDOnly {
+			continue
 		}
 
 		// check the value of given paramtag in the ParamGetterFunc provided as an argument
-		paramValue, err := getParam(paramTag, req)
-		if err != nil {
-			// if an error occured check what is the param policy
-			if policy.FailOnError {
-				return err
-			}
+		paramValue, err := getParam(fieldTag, req)
+		// if an error occured check what is the param policy
+		if err != nil && policy.FailOnError {
+			return err
+
 			// if policy allows errors continue to the next field
 			continue
 		}
@@ -234,10 +213,9 @@ func mapParam(
 
 		// return an error if occurs and
 		// if the policy doesn't allow to continue
-		if err != nil {
-			if policy.FailOnError {
-				return err
-			}
+		if err != nil && policy.FailOnError {
+			return err
+
 		} else if lowerCasedName == "id" {
 			// if the correctly setted field was an id
 			// set the 'idAlreadySet' flag to true
@@ -255,9 +233,9 @@ func paramSetTime(sField reflect.Value,
 	tField reflect.StructField,
 	getParam ParamGetterFunc,
 	req *http.Request,
-	paramTag string,
+	fieldTag string,
 ) error {
-	timeValue, err := getParam(paramTag, req)
+	timeValue, err := getParam(fieldTag, req)
 	if err != nil {
 		return err
 	}

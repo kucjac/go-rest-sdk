@@ -8,265 +8,230 @@ import (
 	"reflect"
 	"testing"
 	"time"
+	// "time"
 )
 
 func TestMapParams(t *testing.T) {
 	Convey("Subject: Map parameters to the given model", t, func() {
-		Convey("Having some model that implements IDSetter interface", func() {
-			model := IDSetterModel{}
-			req := httptest.NewRequest("GET", "/url", nil)
-			policy := DefaultParamPolicy.New()
 
-			err := mapParam(&model, emptyGetParamFunc, req, policy)
+		var err error
+
+		req := httptest.NewRequest("GET", "/url/", nil)
+		policy := DefaultParamPolicy.Copy()
+		var valueMap map[string]string
+		valueMap = make(map[string]string)
+
+		Convey("If an error occurred during getting parameter with getParam func", func() {
+			err = mapParam(&Model{}, getParamErrFunc(map[string]error{
+				"model": errors.New("error")},
+			), req, policy, policy.SearchDepthLevel, "")
 			So(err, ShouldBeError)
-
-			valueMap := map[string]string{"idsettermodel": "15001900"}
-
-			err = mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
-
-			So(err, ShouldBeNil)
-			So(model.ID, ShouldEqual, 15001900)
-
-			model = IDSetterModel{}
-
-			policy.DeepSearch = true
-			err = mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
-
-			So(err, ShouldBeNil)
-			So(model.ID, ShouldEqual, 15001900)
 		})
 
-		Convey("Having a model that contains params and private fields", func() {
-			model := ModelWithID{}
-			req := httptest.NewRequest("GET", "/", nil)
-			policy := DefaultParamPolicy.New()
-			policy.TaggedOnly = true
-
-			valueMap := map[string]string{"modelwithid": "1501", "bar": "1234"}
-			err := mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
+		Convey(`If policy is set to IDOnly and model's parameter is not found in with getParam function, an error should occur.`, func() {
+			policy = &(*policy)
+			policy.IDOnly = true
+			err = mapParam(&Model{}, emptyGetParamFunc, req,
+				policy, policy.SearchDepthLevel, "")
 			So(err, ShouldBeError)
+		})
 
-			policy.TaggedOnly = false
-			policy.DeepSearch = false
-
-			Convey("For ID value not set with different parameter", func() {
-				valueMap = map[string]string{"id": "1230"}
-				err = mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
+		Convey(`Having some model that implements IDSetter interface`, func() {
+			var model IDSetterModel
+			Convey(`And the param value is of uint type, no error should occur and the ID field
+					should be set with provded value`, func() {
+				valueMap := map[string]string{"idsettermodel": "15001900"}
+				err = mapParam(&model, getParamFuncWithValues(valueMap), req, policy,
+					policy.SearchDepthLevel, "")
 				So(err, ShouldBeNil)
+				So(model.ID, ShouldEqual, 15001900)
 			})
 
-			Convey("For ID Value setteble with 'modelwithid' param", func() {
-				valueMap = map[string]string{"modelwithid": "1123"}
-				err = mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
+			Convey(`And the param is of incorrect value, an error should occur`, func() {
+				valueMap := map[string]string{"idsettermodel": "-200"}
+				err = mapParam(&model, getParamFuncWithValues(valueMap), req, policy, policy.SearchDepthLevel, "")
+				So(err, ShouldBeError)
+				So(model.ID, ShouldNotEqual, -200)
+			})
+
+			Convey(`if the policy is set tot IDOnly the function and the SearchDepthLevel is 
+				is 0, the function return immediately.`, func() {
+				policy := DefaultParamPolicy.Copy()
+				policy.IDOnly = true
+				// by default SearchDepthLevel is set to 0, setting just for testing visibility
+				policy.SearchDepthLevel = 0
+				valueMap := map[string]string{"idsettermodel": "123"}
+				err = mapParam(&model, getParamFuncWithValues(valueMap), req, policy,
+					policy.SearchDepthLevel, "")
 				So(err, ShouldBeNil)
-				So(model.ID, ShouldEqual, 1123)
+				So(model.ID, ShouldEqual, 123)
+			})
+		})
 
-				model.ID = 0
+		Convey(`Having a model that contains params and private fields inner structs and 
+			ptr type objects.`, func() {
+			type ShortModel struct {
+				ID    int
+				Field string
+			}
 
-				policy.DeepSearch = true
-				err = mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
+			type ShortModel2 struct {
+				ID int
+			}
+
+			type ModelWithoutID struct {
+				Field1 string
+			}
+
+			type SomeModel struct {
+				ID             int
+				Name           string
+				BarID          int `param:"bar"`
+				privateField   string
+				NotIncluded    string `param:"-"`
+				Short          ShortModel
+				ShortWithParam ShortModel   `param:"short"`
+				PtrModel       *ShortModel2 `param:"ptr-short"`
+				Slice          []int
+				SlicePtr       *[]int
+			}
+
+			var model SomeModel
+			var err error
+			req := httptest.NewRequest("GET", "/", nil)
+			policy := DefaultParamPolicy.Copy()
+
+			valueMap = map[string]string{
+				"somemodel":  "23",
+				"bar":        "44",
+				"shortmodel": "55",
+				"short":      "66",
+				"ptr-short":  "77",
+			}
+
+			Convey(`If SearchDepthLevel is set to 0, no nested models 
+				would get parameters.`, func() {
+				policy.SearchDepthLevel = 0
+				model = SomeModel{}
+				err = mapParam(&model, getParamFuncWithValues(valueMap), req,
+					policy, policy.SearchDepthLevel, "")
 				So(err, ShouldBeNil)
-				So(model.ID, ShouldEqual, 1123)
-			})
-		})
-		Convey("For ID value with different param than model name", func() {
-			req := httptest.NewRequest("GET", "/", nil)
-			model := ModelWithParam{}
-			valueMap := map[string]string{"fieldorf": "1234"}
-			policy := DefaultParamPolicy.New()
-			policy.DeepSearch = true
-			err := mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
-			So(err, ShouldBeNil)
-			So(model.ID, ShouldEqual, 1234)
-
-			Convey("If a param contain incorrect value for given type ", func() {
-				valueMap = map[string]string{"fieldorf": "maciek"}
-				policy.FailOnError = true
-
-				err := mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
-				So(err, ShouldBeError)
-			})
-		})
-
-		Convey(`Having some model and some errors occurs during 
-			getting param with ParamGetterFunc`, func() {
-			req := httptest.NewRequest("GET", "/", nil)
-			model := ModelWithID{}
-			errorMap := map[string]error{
-				"modelwithid": errors.New("Some error"),
-			}
-
-			err := mapParam(&model, getParamErrFunc(errorMap), req, DefaultParamPolicy.New())
-			So(err, ShouldBeError)
-
-			errorMap = map[string]error{
-				"fieldorf": errors.New("Some error."),
-			}
-			paramModel := ModelWithParam{}
-			policy := DefaultParamPolicy.New()
-			policy.DeepSearch = true
-			err = mapParam(&paramModel, getParamErrFunc(errorMap), req, policy)
-			So(err, ShouldBeError)
-
-			policy.FailOnError = false
-			err = mapParam(&paramModel, getParamErrFunc(errorMap), req, policy)
-			So(err, ShouldBeError)
-		})
-
-		Convey("Having Default param policy and param containing model name", func() {
-			model := ModelWithID{}
-			req := httptest.NewRequest("GET", "/", nil)
-
-			policy := DefaultParamPolicy.New()
-			valueMap := map[string]string{"modelwithid": "1234"}
-
-			err := mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
-			So(err, ShouldBeNil)
-			So(model.ID, ShouldEqual, 1234)
-
-		})
-
-		Convey(`Having a DeepSearched ParamPolicy on a model with 
-			structs and a time field`, func() {
-			type deepModel struct {
-				ID                int
-				Name              string
-				ReferencedModel   ModelWithID
-				Disallowed        int `param:"-"`
-				private           int
-				DateCreated       time.Time  `param:"date" time_format:"2006-01-02" time_utc:"1" time_location:"Asia/Chongqing"`
-				PtrDate           *time.Time `param:"ptrdate" time_format:"2006-01-02"`
-				SliceIsNotAllowed []int
-				PtrModel          *ModelWithID `param:"ptrmodel"`
-				Ptrint            *int         `param:"ptrint"`
-				PtrSlice          *[]int
-			}
-			model := deepModel{}
-			req := httptest.NewRequest("GET", "/", nil)
-			policy := DefaultParamPolicy.New()
-			policy.DeepSearch = true
-
-			valueMap := map[string]string{
-				"deepmodel":         "123",
-				"modelwithid":       "456",
-				"date":              "2017-01-20",
-				"ptrdate":           "2017-04-30",
-				"sliceisnotallowed": "1,2,3",
-				"ptrmodel":          "1",
-				"ptrint":            "1",
-			}
-			err := mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
-			So(err, ShouldBeNil)
-			So(model.ID, ShouldEqual, 123)
-			So(model.ReferencedModel.ID, ShouldEqual, 456)
-			year, month, day := model.DateCreated.Date()
-			So(year, ShouldEqual, 2017)
-			So(int(month), ShouldEqual, 01)
-			So(day, ShouldEqual, 20)
-			Println(model.PtrDate)
-			So(model.PtrDate, ShouldNotBeNil)
-			year, month, day = model.PtrDate.Date()
-			So(*model.Ptrint, ShouldEqual, 1)
-
-			Convey("If provided incorrect time field and FailOnError is set to true", func() {
-				model := deepModel{}
-				valueMap["date"] = "201701-20"
-				policy.FailOnError = true
-				err = mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
-				So(err, ShouldBeError)
+				So(model.ID, ShouldEqual, 23)
+				So(model.BarID, ShouldEqual, 44)
+				So(model.Short.ID, ShouldNotEqual, 55)
+				So(model.ShortWithParam.ID, ShouldNotEqual, 66)
+				So(model.PtrModel, ShouldBeNil)
 			})
 
-			Convey("If provided incorrect param for nested struct", func() {
-				model = deepModel{}
-				valueMap["modelwithid"] = "maciej"
-				policy := DefaultParamPolicy.New()
-				policy.DeepSearch = true
-				policy.FailOnError = true
-				err = mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
-				So(err, ShouldBeError)
-			})
-
-			Convey("If provided incorrect param for *nested struct", func() {
-				model = deepModel{}
-				valueMap["ptrdate"] = "2017093-1"
-				policy.FailOnError = true
-				err = mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
-				So(err, ShouldBeError)
-			})
-
-			Convey("If tagged Only ", func() {
-				policy := DefaultParamPolicy.New()
-				policy.TaggedOnly = true
-				policy.DeepSearch = true
-				valueMap["ptrmodel"] = ""
-				valueMap["ptrdate"] = ""
-				err = mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
-				So(err, ShouldBeError)
-			})
-		})
-		Convey("Having a model with Tagged ID and ptr struct fields", func() {
-			type modelTaggedId struct {
-				ID      int `param:"id"`
-				PtrDate *time.Time
-				PtrInt  *int
-			}
-			policy := DefaultParamPolicy.New()
-			policy.TaggedOnly = true
-			policy.DeepSearch = true
-			req := httptest.NewRequest("GET", "/", nil)
-			model := modelTaggedId{}
-			valueMap := map[string]string{"id": "123"}
-			err := mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
-			So(err, ShouldBeNil)
-		})
-
-		Convey("Having a model with ptr type elem and policy without deep search", func() {
-			type modelWithPtrs struct {
-				PtrStruct *[]int
-				PtrInt    *int
-				PtrModel  *ModelWithID
-				Strct     ModelWithID
-				ID        int
-			}
-
-			policy := DefaultParamPolicy.New()
-			policy.TaggedOnly = false
-			req := httptest.NewRequest("GET", "/", nil)
-			model := modelWithPtrs{}
-			valueMap := map[string]string{"modelwithptrs": "123"}
-			err := mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
-			So(err, ShouldBeNil)
-
-			Convey("If fail on error", func() {
-				policy.DeepSearch = true
-				policy.FailOnError = true
-				err = mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
-				So(err, ShouldBeError)
-			})
-
-			Convey("If deep search is true", func() {
-				policy = DefaultParamPolicy.New()
-				policy.DeepSearch = false
-				err = mapParam(&model, getParamFuncWithValues(valueMap), req, policy)
+			Convey(`If SearchDepthLevel is greater than 1, then nested models
+				 would map parameters.`, func() {
+				policy.SearchDepthLevel = 1
+				model = SomeModel{}
+				err = mapParam(&model, getParamFuncWithValues(valueMap), req,
+					policy, policy.SearchDepthLevel, "")
 				So(err, ShouldBeNil)
+				So(model.ID, ShouldEqual, 23)
+				So(model.BarID, ShouldEqual, 44)
+				So(model.Short.ID, ShouldEqual, 55)
+				So(model.ShortWithParam.ID, ShouldEqual, 66)
+				So(model.PtrModel, ShouldNotBeNil)
+				So(model.PtrModel.ID, ShouldEqual, 77)
+
 			})
 		})
-
-		Convey("Having model and a getParam func which fails on error", func() {
-			type modelToTest struct {
-				Name string
-				ID   int
-			}
-			policy := DefaultParamPolicy.New()
-			policy.DeepSearch = true
+		Convey("If policy FailOnError is true", func() {
 			policy.FailOnError = true
-			errorMap := map[string]error{
-				"name": errors.New("Error"),
-			}
-			req := httptest.NewRequest("GET", "/", nil)
-			err := mapParam(&modelToTest{}, getParamErrFunc(errorMap), req, policy)
-			So(err, ShouldBeError)
+			Convey("Having struct that has incorrectly set time field (i.e. no time tags)", func() {
+				type modelWithIncorrectTime struct {
+					ID   int
+					Time time.Time `param:"mytime"`
+				}
+
+				valueMap = map[string]string{
+					"model":  "123",
+					"mytime": "1213",
+				}
+
+				model := modelWithIncorrectTime{}
+				policy.SearchDepthLevel = 1
+				err = mapParam(&model, getParamFuncWithValues(valueMap), req,
+					policy, policy.SearchDepthLevel, "model")
+				So(err, ShouldBeError)
+			})
+			Convey("Having struct with nested structs that throws errors", func() {
+				type modelWithNested struct {
+					ID     int
+					Nested struct{ Name string }
+				}
+				valueMap = map[string]string{
+					"model":  "123",
+					"nested": "12",
+				}
+
+				model := modelWithNested{}
+				policy.SearchDepthLevel = 1
+				err = mapParam(&model, getParamFuncWithValues(valueMap), req,
+					policy, policy.SearchDepthLevel, "model")
+				So(err, ShouldBeError)
+			})
 		})
+		Convey(`If model does not implement IDSetter`, func() {
+			type SomeModel struct {
+				Name    string
+				SomeInt uint `param:"errory"`
+				ID      int
+			}
+			model := new(SomeModel)
+			policy := DefaultParamPolicy.Copy()
+
+			Convey("If provided incorrect parameter value for the model", func() {
+				policy.IDOnly = true
+				valueMap = map[string]string{
+					"model": "incorrect",
+				}
+				err := mapParam(model, getParamFuncWithValues(valueMap), req,
+					policy, policy.SearchDepthLevel, "model")
+				So(err, ShouldBeError)
+			})
+			Convey("If policy is IDOnly with correct model value", func() {
+				policy.IDOnly = true
+				valueMap = map[string]string{
+					"model": "123",
+				}
+				err := mapParam(model, getParamFuncWithValues(valueMap), req,
+					policy, policy.SearchDepthLevel, "model")
+				So(err, ShouldBeNil)
+			})
+			Convey("If provided parameter throws an error with getParam func", func() {
+				policy.FailOnError = true
+				errorMap := map[string]error{
+					"name": errors.New("Some error"),
+				}
+				err := mapParam(model, getParamErrFunc(errorMap), req, policy,
+					policy.SearchDepthLevel, "model")
+				So(err, ShouldBeError)
+			})
+			Convey(`If provided non id parameter throws 
+				an error with setting by field func`, func() {
+				policy.FailOnError = true
+				valueMap = map[string]string{
+					"errory": "-1",
+				}
+				err := mapParam(model, getParamFuncWithValues(valueMap), req,
+					policy, policy.SearchDepthLevel, "")
+				So(err, ShouldBeError)
+			})
+			Convey(`If setting parameter is named as 'id'`, func() {
+				valueMap = map[string]string{
+					"id": "1234",
+				}
+				err := mapParam(model, getParamFuncWithValues(valueMap), req,
+					policy, policy.SearchDepthLevel, "")
+				So(err, ShouldBeNil)
+			})
+
+		})
+
 	})
 }
 
@@ -274,23 +239,25 @@ func TestBindParams(t *testing.T) {
 	Convey("Subject: bind url parameters using BindParam function", t, func() {
 		Convey(`Having some model, url parameter function and http request`, func() {
 			req := httptest.NewRequest("GET", "/", nil)
-			Convey(`If used a nonaddressable (not a pointer to) model, 
-				the function should Panic`, func() {
+			policy := DefaultParamPolicy.Copy()
+			Convey(`If used a nonaddressable (not a pointer to) model,
+					the function should Panic`, func() {
 				model := ModelWithID{}
-				So(func() { BindParams(req, model, emptyGetParamFunc, DefaultParamPolicy.New()) }, ShouldPanic)
+				So(func() { BindParams(req, model, emptyGetParamFunc, policy) }, ShouldPanic)
 			})
 
-			Convey(`If no params provided, or the ParamGetterFunc provided 
-				doesn't contain models id, an error should be thrown`, func() {
+			Convey(`If no params provided, or the ParamGetterFunc provided
+					doesn't contain models id, an error should be thrown`, func() {
 				model := &ModelWithID{}
-				err := BindParams(req, model, emptyGetParamFunc, DefaultParamPolicy.New())
+				err := BindParams(req, model, emptyGetParamFunc, policy)
 				So(err, ShouldBeError)
 			})
-			Convey(`If no policy provided, by default 
-				'DefaultParamPolicy', would be used`, func() {
+			Convey(`If no policy provided, by default
+					the function returns nil error`, func() {
 				var policy *ParamPolicy = nil
 				model := &ModelWithID{}
-				BindParams(req, model, emptyGetParamFunc, policy)
+				err := BindParams(req, model, emptyGetParamFunc, policy)
+				So(err, ShouldBeNil)
 			})
 
 		})

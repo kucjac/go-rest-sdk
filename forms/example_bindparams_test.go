@@ -38,35 +38,35 @@ func ChiParamGetterFunc(paramName string, req *http.Request) (string, error) {
 	return paramValue, nil
 }
 
-func handleFooBarDate(rw http.ResponseWriter, req *http.Request) {
-	// Match the model with the routing url params
-	model := &Model{}
-
-	// set the policy to default - with DeepSearch
-	policy := DefaultParamPolicy.New()
-	policy.DeepSearch = true
-	policy.FailOnError = true
-
-	err := BindParams(req, model, ChiParamGetterFunc, policy)
-	if err != nil {
-		http.Error(rw, fmt.Sprintf("Bind Parameter errors: %v", err), 500)
-		return
-	}
-
-	httpResponse, err := json.Marshal(model)
-	if err != nil {
-		http.Error(rw, "Cannot marshal the model", 500)
-		return
-	}
-	rw.Write(httpResponse)
-}
-
 // ExampleBindParams is an example of bind params using third party routing - in this example
 // it is 'github.com/go-chi/chi' package
 func ExampleBindParams() {
 
 	// In this example chi.Router would be used
 	mux := chi.NewMux()
+
+	handleFooBarDate := func(rw http.ResponseWriter, req *http.Request) {
+		// Match the model with the routing url params
+		model := &Model{}
+
+		// set the policy to default - with DeepSearch
+		policy := DefaultParamPolicy.Copy()
+		policy.SearchDepthLevel = 1
+		policy.FailOnError = true
+
+		err := BindParams(req, model, ChiParamGetterFunc, policy)
+		if err != nil {
+			http.Error(rw, fmt.Sprintf("Bind Parameter errors: %v", err), 500)
+			return
+		}
+
+		httpResponse, err := json.Marshal(model)
+		if err != nil {
+			http.Error(rw, "Cannot marshal the model", 500)
+			return
+		}
+		rw.Write(httpResponse)
+	}
 
 	// Let our mux handle url with multiple parameters
 	mux.Get("/models/{model}/bars/{bar}/date/{date}", handleFooBarDate)

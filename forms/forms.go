@@ -25,16 +25,16 @@ type IDSetter interface {
 // BindQuery binds the url Query
 // for the given request to the provided model
 // The function mechanics is based on provided request URL Query
-// as well as model and Policy.
+// as well as model and BindPolicy.
 // The policy defines if the query binding should search only for
 // the fields that contains tags, defines the tags and decides wether the
 // function should return an error if any occurs during operation.
-// If no policy is provided (or nil) the DefaultPolicy would be used.
+// If no policy is provided (or nil) the DefaultBindPolicy would be used.
 // By default the funciton binds any matched field, searches for the
 // 'form' tag and doesn't return errors.
-func BindQuery(req *http.Request, model interface{}, policy *Policy) error {
+func BindQuery(req *http.Request, model interface{}, policy *BindPolicy) error {
 	if policy == nil {
-		policy = &DefaultPolicy
+		policy = &DefaultBindPolicy
 	}
 	values := req.URL.Query()
 	err := mapForm(model, values, policy)
@@ -46,10 +46,10 @@ func BindQuery(req *http.Request, model interface{}, policy *Policy) error {
 
 // BindJSON binds the reads the provided request body
 // and decode it into provided model.
-// If no policy arugment is used (nil) - than DefaultPolicy would be used.
+// If no policy arugment is used (nil) - than DefaultBindPolicy would be used.
 // The policy uses only FailOnError field - that decides wether the errors
 // should be returned
-func BindJSON(req *http.Request, model interface{}, policy *Policy) error {
+func BindJSON(req *http.Request, model interface{}, policy *BindPolicy) error {
 	if policy == nil {
 		policy = &DefaultJSONPolicy
 	}
@@ -107,7 +107,7 @@ type fieldValue struct {
 	Value reflect.Value
 }
 
-func mapForm(ptr interface{}, form map[string][]string, policy *Policy) error {
+func mapForm(ptr interface{}, form map[string][]string, policy *BindPolicy) error {
 	// Get type of pointer
 	t := reflect.TypeOf(ptr).Elem()
 
