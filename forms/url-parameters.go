@@ -1,6 +1,7 @@
 package forms
 
 import (
+	"errors"
 	"github.com/kucjac/go-rest-sdk/refutils"
 	"net/http"
 	"reflect"
@@ -8,6 +9,8 @@ import (
 	"strings"
 	"time"
 )
+
+var ErrNoParamGetterFunc = errors.New("No param getter func provided")
 
 // ParamGetterFunc defines the function that retrieve the parameters
 // from the specific third-party routing framework on the base
@@ -34,6 +37,9 @@ func BindParams(
 ) error {
 	if policy == nil {
 		return nil
+	}
+	if getParam == nil {
+		return ErrNoParamGetterFunc
 	}
 	return mapParam(model, getParam, req, policy, policy.SearchDepthLevel, "")
 }

@@ -262,6 +262,13 @@ func TestBindParams(t *testing.T) {
 				err := BindParams(req, model, emptyGetParamFunc, policy)
 				So(err, ShouldBeNil)
 			})
+			Convey(`If no paramGetterFunc provided the function would return error`, func() {
+				policy := DefaultParamPolicy.Copy()
+				model := &ModelWithID{}
+				var getParam ParamGetterFunc
+				err := BindParams(req, model, getParam, policy)
+				So(err, ShouldBeError)
+			})
 
 		})
 	})

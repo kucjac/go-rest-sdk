@@ -18,7 +18,7 @@ var DefaultErrorMap map[dberrors.Error]resterrors.Error = map[dberrors.Error]res
 	dberrors.ErrRestrictViolation:     resterrors.ErrInvalidInput,
 	dberrors.ErrNotNullViolation:      resterrors.ErrInvalidInput,
 	dberrors.ErrForeignKeyViolation:   resterrors.ErrInvalidInput,
-	dberrors.ErrUniqueViolation:       resterrors.ErrInvalidInput,
+	dberrors.ErrUniqueViolation:       resterrors.ErrResourceAlreadyExists,
 	dberrors.ErrCheckViolation:        resterrors.ErrInvalidInput,
 	dberrors.ErrInvalidTransState:     resterrors.ErrInternalError,
 	dberrors.ErrInvalidTransTerm:      resterrors.ErrInternalError,

@@ -2,28 +2,26 @@ package httprouter
 
 import (
 	"context"
+	"errors"
 	"github.com/julienschmidt/httprouter"
 	"github.com/kucjac/go-rest-sdk/errhandler"
 	"github.com/kucjac/go-rest-sdk/forms"
 	"github.com/kucjac/go-rest-sdk/handlers"
-	"github.com/kucjac/go-rest-sdk/refutils"
+	"github.com/kucjac/go-rest-sdk/logger"
 	"github.com/kucjac/go-rest-sdk/repository"
 	"github.com/kucjac/go-rest-sdk/response"
 	"net/http"
 )
 
-func HttpRouterSetIDFunc(req *http.Request, model interface{}) error {
-
+func HttprouterParamGetterFunc(param string, req *http.Request) (paramValue string, err error) {
 	params, ok := req.Context().Value(httprouter.ParamsKey).(httprouter.Params)
 	if !ok {
-		return handlers.ErrIncorrectCustomContext
+		err = errors.New("No httprouter ParamsKey in the request context. Cannot find httprouter.Params")
+		return
 	}
-	name := refutils.ModelName(model)
-	paramID := params.ByName(name)
-	if err := forms.SetID(model, paramID); err != nil {
-		return err
-	}
-	return nil
+
+	paramValue = params.ByName(param)
+	return
 }
 
 type HttpRouterHandler struct {
@@ -34,31 +32,30 @@ func New(
 	repo repository.Repository,
 	errHandler *errhandler.ErrorHandler,
 	body response.Responser,
+	logs logger.ExtendedLeveledLogger,
 ) (*HttpRouterHandler, error) {
-	h, err := handlers.New(repo, errHandler, body)
+	generic, err := handlers.New(repo, errHandler, body, logs)
 	if err != nil {
 		return nil, err
 	}
-	h.WithSetIDFunc(HttpRouterSetIDFunc)
-	return &HttpRouterHandler{GenericHandler: *h}, nil
+	generic.WithParamGetterFunc(HttprouterParamGetterFunc)
+
+	return &HttpRouterHandler{GenericHandler: *generic}, nil
 }
 
 func (h *HttpRouterHandler) New() *HttpRouterHandler {
-	return &(*h)
+	handlerCopy := *h
+	return &(handlerCopy)
 }
 
-func (h *HttpRouterHandler) WithQueryPolicy(policy *forms.Policy) *HttpRouterHandler {
+func (h *HttpRouterHandler) WithQueryPolicy(policy *forms.BindPolicy) *HttpRouterHandler {
 	h.GenericHandler.WithQueryPolicy(policy)
 	return h
+
 }
 
-func (h *HttpRouterHandler) WithJSONPolicy(policy *forms.Policy) *HttpRouterHandler {
-	h.GenericHandler.WithJSONPolicy(policy)
-	return h
-}
-
-func (h *HttpRouterHandler) WithListPolicy(policy *forms.ListPolicy) *HttpRouterHandler {
-	h.GenericHandler.WithListPolicy(policy)
+func (h *HttpRouterHandler) WithParamPolicy(policy *forms.ParamPolicy) *HttpRouterHandler {
+	h.GenericHandler.WithParamPolicy(policy)
 	return h
 }
 

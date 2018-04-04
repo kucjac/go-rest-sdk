@@ -11,7 +11,9 @@ import (
 	"github.com/kucjac/go-rest-sdk/repository"
 	"github.com/kucjac/go-rest-sdk/response"
 	"github.com/kucjac/go-rest-sdk/resterrors"
+	"log"
 	"net/http"
+	"os"
 )
 
 var (
@@ -25,34 +27,31 @@ var (
 //
 
 type GenericHandler struct {
-	// repository for given handler
-	repo repository.Repository
+	// Repository for given handler
+	Repo repository.Repository
 
-	errHandler *errhandler.ErrorHandler
+	ErrHandler *errhandler.ErrorHandler
+	// ResponseBody - body used by in responses
+	ResponseBody response.Responser
 
 	// logger
-	log logger.GenericLogger
+	Log logger.ExtendedLeveledLogger
 
-	// queryPolicy - current policy for binding queries using BindQuery
-	queryPolicy *forms.Policy
+	// QueryPolicy - current policy for binding queries using BindQuery
+	QueryPolicy *forms.BindPolicy
 
-	// jsonPolicy - policy for binding json using BindJSON
-	jsonPolicy *forms.Policy
-
-	// listPolicy - policy used or bindings Lists
-	listPolicy *forms.ListPolicy
-
-	// paramPolicy - policy used for binding Parameters with BindParams
-	paramPolicy *forms.ParamPolicy
-
-	// responseBody - body used by in responses
-	responseBody response.Responser
-
-	// getParam - ParamGetterFunction used for getting parameters used by third-party routers
-	getParam forms.ParamGetterFunc
-
+	// ParamPolicy - policy used for binding Parameters with BindParams
+	ParamPolicy *forms.ParamPolicy
+	// GetParams - ParamGetterFunction used for getting parameters used by third-party routers
+	GetParams forms.ParamGetterFunc
 	// with params specify if given route should bind parameters
-	withParams bool
+	UseURLParams bool
+
+	//ListParams
+	ListParams *repository.ListParameters
+	//UseCount flag for List method - defines if the response should include count of given
+	//collection
+	IncludeListCount bool
 }
 
 type SetIDFunc func(req *http.Request, model interface{}) error
@@ -61,109 +60,96 @@ type SetIDFunc func(req *http.Request, model interface{}) error
 func New(repo repository.Repository,
 	errHandler *errhandler.ErrorHandler,
 	responseBody response.Responser,
-) (*GenericHandler, error) {
+	logs logger.ExtendedLeveledLogger,
+) (handler *GenericHandler, err error) {
 	if repo == nil || errHandler == nil {
-		return nil, errors.New("repository and errorHandler cannot be nil.")
+		return nil, errors.New("Repository and errorHandler cannot be nil.")
 	}
 	if responseBody == nil {
 		responseBody = &response.DefaultBody{}
 	}
-	chiHandler := &GenericHandler{
-		repo:         repo,
-		errHandler:   errHandler,
-		responseBody: responseBody,
+	handler = &GenericHandler{
+		Repo:         repo,
+		ErrHandler:   errHandler,
+		ResponseBody: responseBody,
 	}
-	return chiHandler, nil
+	if logs == nil {
+		handler.Log, _ = logger.NewLoggerWrapper(logger.NewBasicLogger(os.Stderr, "", log.Ldate))
+	}
+	return handler, nil
 }
 
 // New creates a copy of given handler and returns it.
 func (c *GenericHandler) New() *GenericHandler {
-	h := *c
-	return &h
+	handlerCopy := *c
+	return &handlerCopy
 }
 
 // WithQueryPolicy sets the query policy for given handler.
 // Returns given handler so it can be used in a callback manner
-func (c *GenericHandler) WithQueryPolicy(policy *forms.Policy) *GenericHandler {
-	c.queryPolicy = policy
-	return c
-}
-
-// WithJSONPolicy sets the policy used for BindJSON function.
-// Returns given handler so it can be used in a callback manner
-func (c *GenericHandler) WithJSONPolicy(policy *forms.Policy) *GenericHandler {
-	c.jsonPolicy = policy
-	return c
-}
-
-// WithListPolicy sets the police used in 'List' handler
-// Returns given handler so it can be used in a callback manner
-func (c *GenericHandler) WithListPolicy(policy *forms.ListPolicy) *GenericHandler {
-	c.listPolicy = policy
+func (c *GenericHandler) WithQueryPolicy(policy *forms.BindPolicy) *GenericHandler {
+	c.QueryPolicy = policy
 	return c
 }
 
 // WithParamPolicy sets the param policy for given handler.
 // Returns given handler so it can be used in a callback manner
 func (c *GenericHandler) WithParamPolicy(policy *forms.ParamPolicy) *GenericHandler {
-	c.paramPolicy = policy
+	c.ParamPolicy = policy
+	return c
+}
+
+// WithListParameters sets the ListParameters for the Select method
+// Returns given handler so it can be used in a callback manner
+func (c *GenericHandler) WithListParameters(
+	params *repository.ListParameters,
+) *GenericHandler {
+	c.ListParams = params
+	return c
+}
+
+// WithSelectCount sets the IncludeListCount flag for the handler
+func (c *GenericHandler) WithSelectCount(
+	includeCount bool,
+) *GenericHandler {
+	c.IncludeListCount = includeCount
 	return c
 }
 
 // WithParams sets the given handler so that is binds the routing parameters to the model.
 // Returns given handler so it can be used in a callback manner
-func (c *GenericHandler) WithParams(useParams bool) *GenericHandler {
-	c.withParams = useParams
-	return c
-}
-
-// WithParamGetterFunc sets the ParamGetterFunc for given handler.
-// Returns given handler so it can be used in a callback manner
-func (c *GenericHandler) WithParamGetterFunc(getParam forms.ParamGetterFunc) *GenericHandler {
-	c.getParam = getParam
-	return c
-}
-
-func (c *GenericHandler) WithSetIDFunc(
-	customIDFunc SetIDFunc,
+func (c *GenericHandler) WithURLParams(
+	useParams bool,
 ) *GenericHandler {
-	c.idSetFunc = customIDFunc
+	c.UseURLParams = useParams
+	return c
+}
+
+//WithParamGetterFunc sets the param getter func for given handler
+func (c *GenericHandler) WithParamGetterFunc(
+	GetParams forms.ParamGetterFunc,
+) *GenericHandler {
+	c.GetParams = GetParams
+	return c
+}
+
+// WithResponseBody sets the response body for the GenericHandler
+func (c *GenericHandler) WithResponseBody(
+	body response.Responser,
+) *GenericHandler {
+	c.ResponseBody = body
 	return c
 }
 
 // Create is a chiHandler HandlerFunc for creating new restful model records
-// if the flag 'withParams' is set to true and no getParam is set for handler
+// if the flag 'WithParams' is set to true and no GetParams is set for handler
 // the handler will panic
 func (c *GenericHandler) Create(model interface{}) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		var status int
 		obj := refutils.ObjOfPtrType(model)
 
-		// Set parameter if withParams flag is set to true
-		if c.withParams {
-
-			// if no getParam function set
-			if c.getParam == nil {
-				c.log.Errorf("For %v, an error occurred: %v",
-					req.URL.Path, ErrNoParamGetterFuncSet)
-				restErr := resterrors.ErrInternalError.New()
-				status = 500
-				c.JSON(rw, req, status, c.getResponseBodyErr(status, restErr))
-				return
-			}
-
-			// bind params
-			err := forms.BindParams(req, model, c.getParam, c.paramPolicy)
-			// if error occured - either the policy FailOnError is set or cannot set
-			// other parameters
-			if err != nil {
-				restErr := resterrors.ErrInternalError.New()
-				status = 500
-				c.JSON(rw, req, status, c.getResponseBodyErr(status, restErr))
-				return
-			}
-		}
-		err := forms.BindJSON(req, obj, c.jsonPolicy)
+		err := forms.BindJSON(req, obj)
 		if err != nil {
 			restErr := resterrors.ErrInvalidJSONDocument.New()
 			restErr.AddDetailInfo(err.Error())
@@ -172,7 +158,22 @@ func (c *GenericHandler) Create(model interface{}) http.HandlerFunc {
 			return
 		}
 
-		dbErr := c.repo.Create(obj)
+		// Set parameter if WithParams flag is set to true
+		if c.UseURLParams {
+			// bind params
+			err := forms.BindParams(req, obj, c.GetParams, c.ParamPolicy)
+			// if error occured - either the policy FailOnError is set or cannot set
+			// other parameters
+			if err != nil {
+				c.Log.Errorf("%v: %s", req.URL.Path, err)
+				restErr := resterrors.ErrInternalError.New()
+				status = 500
+				c.JSON(rw, req, status, c.getResponseBodyErr(status, restErr))
+				return
+			}
+		}
+
+		dbErr := c.Repo.Create(obj)
 		if dbErr != nil {
 			c.handleDBError(rw, req, dbErr)
 			return
@@ -188,15 +189,17 @@ func (c *GenericHandler) Get(model interface{}) http.HandlerFunc {
 
 		obj := refutils.ObjOfPtrType(model)
 
-		forms.BindParams(req, model, getParam, policy)
-		err := c.idSetFunc(req, model)
-		if err != nil {
-			restErr := resterrors.ErrInternalError.New()
-			c.JSON(rw, req, 500, c.getResponseBodyErr(500, restErr))
-			return
+		if c.UseURLParams {
+			err := forms.BindParams(req, obj, c.GetParams, c.ParamPolicy)
+			if err != nil {
+				restErr := resterrors.ErrInternalError.New()
+				c.Log.Errorf("%v: %v", req.URL.Path, err)
+				c.JSON(rw, req, 500, c.getResponseBodyErr(500, restErr))
+				return
+			}
 		}
 
-		result, dbErr := c.repo.Get(obj)
+		result, dbErr := c.Repo.Get(obj)
 		if dbErr != nil {
 			c.handleDBError(rw, req, dbErr)
 			return
@@ -211,7 +214,8 @@ func (c *GenericHandler) List(model interface{}) http.HandlerFunc {
 		// New 'model' entity
 		obj := refutils.ObjOfPtrType(model)
 
-		err := forms.BindQuery(req, obj, c.queryPolicy)
+		// Bind Query
+		err := forms.BindQuery(req, obj, c.QueryPolicy)
 		if err != nil {
 			restErr := resterrors.ErrInvalidQueryParameter.New()
 			restErr.AddDetailInfo(err.Error())
@@ -220,9 +224,10 @@ func (c *GenericHandler) List(model interface{}) http.HandlerFunc {
 		}
 
 		var params *repository.ListParameters
-		if c.listPolicy != nil {
-			params = &repository.ListParameters{}
-			err = forms.BindQuery(req, params, &c.listPolicy.Policy)
+		// Set List Parameters
+		if c.ListParams != nil {
+			params = new(repository.ListParameters)
+			err = forms.BindQuery(req, params, c.QueryPolicy)
 			if err != nil {
 				restErr := resterrors.ErrInvalidQueryParameter.New()
 				restErr.AddDetailInfo(err.Error())
@@ -230,17 +235,28 @@ func (c *GenericHandler) List(model interface{}) http.HandlerFunc {
 				return
 			}
 		}
+
+		// set URL parameters
+		if c.UseURLParams {
+			err := forms.BindParams(req, obj, c.GetParams, c.ParamPolicy)
+			if err != nil {
+				restErr := resterrors.ErrInternalError.New()
+				c.Log.Errorf("%v: %v", req.URL.Path, err)
+				c.JSON(rw, req, 500, c.getResponseBodyErr(500, restErr))
+				return
+			}
+		}
+
 		var result interface{}
-		var count int
 		var dbErr *dberrors.Error
 
 		if params != nil {
 			if !params.ContainsParameters() {
-				params.Limit = c.listPolicy.DefaultLimit
+				params.Limit = c.ListParams.Limit
 			}
-			result, dbErr = c.repo.ListWithParams(obj, params)
+			result, dbErr = c.Repo.ListWithParams(obj, params)
 		} else {
-			result, dbErr = c.repo.List(obj)
+			result, dbErr = c.Repo.List(obj)
 		}
 		if dbErr != nil {
 			c.handleDBError(rw, req, dbErr)
@@ -249,16 +265,19 @@ func (c *GenericHandler) List(model interface{}) http.HandlerFunc {
 
 		body := c.getResponseBodyContent(200, result)
 
-		if c.listPolicy.WithCount {
+		// CollectionCount
+		var collectionCount int
+		if c.IncludeListCount {
 			// Get Count for given collection
-			count, dbErr = c.repo.Count(model)
+			collectionCount, dbErr = c.Repo.Count(model)
 			if dbErr != nil {
 				c.handleDBError(rw, req, dbErr)
 				return
 			}
-			type Count int
 			// Add as 'count' to the body Content
-			body.AddContent(Count(count))
+			type Count int
+
+			body.AddContent(Count(collectionCount))
 		}
 
 		c.JSON(rw, req, 200, body)
@@ -269,21 +288,26 @@ func (c *GenericHandler) Update(model interface{}) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		obj := refutils.ObjOfPtrType(model)
 
-		err := c.idSetFunc(req, obj)
-		if err != nil {
-			restErr := resterrors.ErrInternalError.New()
-			c.JSON(rw, req, 500, c.getResponseBodyErr(500, restErr))
-			return
-		}
-
-		err = forms.BindJSON(req, obj, c.jsonPolicy)
+		err := forms.BindJSON(req, obj)
 		if err != nil {
 			restErr := resterrors.ErrInvalidJSONDocument.New()
 			restErr.AddDetailInfo(err.Error())
 			c.JSON(rw, req, 400, c.getResponseBodyErr(400, restErr))
+			return
 		}
 
-		dbErr := c.repo.Update(obj)
+		// set URL parameters
+		if c.UseURLParams {
+			err := forms.BindParams(req, obj, c.GetParams, c.ParamPolicy)
+			if err != nil {
+				restErr := resterrors.ErrInternalError.New()
+				c.Log.Errorf("%v: %v", req.URL.Path, err)
+				c.JSON(rw, req, 500, c.getResponseBodyErr(500, restErr))
+				return
+			}
+		}
+
+		dbErr := c.Repo.Update(obj)
 		if dbErr != nil {
 			c.handleDBError(rw, req, dbErr)
 			return
@@ -300,16 +324,21 @@ func (c *GenericHandler) Patch(model interface{}) http.HandlerFunc {
 		var status int
 
 		whereObj := refutils.ObjOfPtrType(model)
-		if err := c.idSetFunc(req, whereObj); err != nil {
-			restErr := resterrors.ErrInternalError.New()
-			status = 500
-			c.JSON(rw, req, status, c.getResponseBodyErr(status, restErr))
-			return
+
+		// set URL parameters
+		if c.UseURLParams {
+			err := forms.BindParams(req, whereObj, c.GetParams, c.ParamPolicy)
+			if err != nil {
+				restErr := resterrors.ErrInternalError.New()
+				c.Log.Errorf("%v: %v", req.URL.Path, err)
+				c.JSON(rw, req, 500, c.getResponseBodyErr(500, restErr))
+				return
+			}
 		}
 
 		obj := refutils.ObjOfPtrType(model)
 
-		if err := forms.BindJSON(req, obj, c.jsonPolicy); err != nil {
+		if err := forms.BindJSON(req, obj); err != nil {
 			restErr := resterrors.ErrInvalidJSONDocument.New()
 			restErr.AddDetailInfo(err.Error())
 			status = 400
@@ -317,13 +346,13 @@ func (c *GenericHandler) Patch(model interface{}) http.HandlerFunc {
 			return
 		}
 
-		dbErr := c.repo.Patch(obj, whereObj)
+		dbErr := c.Repo.Patch(obj, whereObj)
 		if dbErr != nil {
 			c.handleDBError(rw, req, dbErr)
 			return
 		}
 
-		result, dbErr := c.repo.Get(whereObj)
+		result, dbErr := c.Repo.Get(whereObj)
 		if dbErr != nil {
 			c.handleDBError(rw, req, dbErr)
 			return
@@ -340,15 +369,19 @@ func (c *GenericHandler) Delete(model interface{}) http.HandlerFunc {
 
 		whereObj := refutils.ObjOfPtrType(model)
 
-		if err := c.idSetFunc(req, whereObj); err != nil {
-			restErr := resterrors.ErrInternalError.New()
-			status = 500
-			c.JSON(rw, req, status, c.getResponseBodyErr(status, restErr))
-			return
+		// set URL parameters
+		if c.UseURLParams {
+			err := forms.BindParams(req, whereObj, c.GetParams, c.ParamPolicy)
+			if err != nil {
+				restErr := resterrors.ErrInternalError.New()
+				c.Log.Errorf("%v: %v", req.URL.Path, err)
+				c.JSON(rw, req, 500, c.getResponseBodyErr(500, restErr))
+				return
+			}
 		}
 
 		obj := refutils.ObjOfPtrType(model)
-		dbErr := c.repo.Delete(obj, whereObj)
+		dbErr := c.Repo.Delete(obj, whereObj)
 		if dbErr != nil {
 			c.handleDBError(rw, req, dbErr)
 			return
@@ -373,7 +406,7 @@ func (c *GenericHandler) JSON(
 		body = (&response.DefaultBody{}).NewErrored().WithErrors(resterrors.ErrInternalError.New())
 		status = 500
 		marshaledBody, _ = json.Marshal(body)
-		c.log.Errorf("On: %v route, an error occurred: %v", req.URL.Path, err)
+		c.Log.Errorf("On: %s route, an error occurred while marshaling: %v", req.URL.Path, err)
 	}
 	rw.WriteHeader(status)
 	rw.Write(marshaledBody)
@@ -387,17 +420,17 @@ func (c *GenericHandler) handleDBError(
 ) {
 	var isInternal bool
 	var status int
-	restErr, err := c.errHandler.Handle(dbError)
+	restErr, err := c.ErrHandler.Handle(dbError)
 	if err != nil {
 		isInternal = true
-		c.log.Errorf("Error while handling DBError: %v", err)
+		c.Log.Errorf("%v: %v", req.URL.Path, err)
 		restErr = resterrors.ErrInternalError.New()
 	} else {
 		isInternal = restErr.Compare(resterrors.ErrInternalError)
 	}
 
 	if isInternal {
-		c.log.Errorf("On the route Database error: %v", dbError)
+		c.Log.Errorf("%v: %v", req.URL.Path, err)
 		status = 500
 	} else {
 		status = 400
@@ -409,7 +442,7 @@ func (c *GenericHandler) handleDBError(
 func (c *GenericHandler) getResponseBodyErr(
 	status int, errs ...*resterrors.Error,
 ) response.Responser {
-	body := c.responseBody.NewErrored().WithErrors(errs...)
+	body := c.ResponseBody.NewErrored().WithErrors(errs...)
 	if body, ok := body.(response.StatusResponser); ok {
 		body.WithStatus(status)
 	}
@@ -419,7 +452,7 @@ func (c *GenericHandler) getResponseBodyErr(
 func (c *GenericHandler) getResponseBodyContent(
 	status int, content ...interface{},
 ) response.Responser {
-	body := c.responseBody.New().WithContent(content...)
+	body := c.ResponseBody.New().WithContent(content...)
 	if body, ok := body.(response.StatusResponser); ok {
 		body.WithStatus(status)
 	}
