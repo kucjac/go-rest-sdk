@@ -94,6 +94,7 @@ func TestMapParams(t *testing.T) {
 				PtrModel       *ShortModel2 `param:"ptr-short"`
 				Slice          []int
 				SlicePtr       *[]int
+				IntPtr         *int
 			}
 
 			var model SomeModel
@@ -107,6 +108,7 @@ func TestMapParams(t *testing.T) {
 				"shortmodel": "55",
 				"short":      "66",
 				"ptr-short":  "77",
+				"intptr":     "88",
 			}
 
 			Convey(`If SearchDepthLevel is set to 0, no nested models 
@@ -121,6 +123,7 @@ func TestMapParams(t *testing.T) {
 				So(model.Short.ID, ShouldNotEqual, 55)
 				So(model.ShortWithParam.ID, ShouldNotEqual, 66)
 				So(model.PtrModel, ShouldBeNil)
+				So(*model.IntPtr, ShouldEqual, 88)
 			})
 
 			Convey(`If SearchDepthLevel is greater than 1, then nested models

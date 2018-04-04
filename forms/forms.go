@@ -29,15 +29,13 @@ type IDSetter interface {
 // The policy defines if the query binding should search only for
 // the fields that contains tags, defines the tags and decides wether the
 // function should return an error if any occurs during operation.
-// If no policy is provided (or nil) the DefaultBindPolicy would be used.
-// By default the funciton binds any matched field, searches for the
-// 'form' tag and doesn't return errors.
+// If no policy is provided (or nil) then the function return quickly with nil error.
 func BindQuery(req *http.Request, model interface{}, policy *BindPolicy) error {
 	if policy == nil {
-		policy = &DefaultBindPolicy
+		return nil
 	}
 	values := req.URL.Query()
-	err := mapForm(model, values, policy)
+	err := mapForm(model, values, policy, policy.SearchDepthLevel)
 	if err != nil {
 		return err
 	}
@@ -46,16 +44,11 @@ func BindQuery(req *http.Request, model interface{}, policy *BindPolicy) error {
 
 // BindJSON binds the reads the provided request body
 // and decode it into provided model.
-// If no policy arugment is used (nil) - than DefaultBindPolicy would be used.
-// The policy uses only FailOnError field - that decides wether the errors
-// should be returned
-func BindJSON(req *http.Request, model interface{}, policy *BindPolicy) error {
-	if policy == nil {
-		policy = &DefaultJSONPolicy
-	}
+// If an error occurred during model binding, error returns
+func BindJSON(req *http.Request, model interface{}) error {
 	decoder := json.NewDecoder(req.Body)
 	err := decoder.Decode(model)
-	if policy.FailOnError && err != nil {
+	if err != nil {
 		return err
 	}
 	return nil
@@ -100,95 +93,136 @@ func SetID(model interface{}, id string) error {
 	return ErrIncorrectModel
 }
 
-// fieldValue is a helper struct that contains a pair of reflect.StructField
-// with its reflect.Value
-type fieldValue struct {
-	Field reflect.StructField
-	Value reflect.Value
-}
+func mapForm(
+	model interface{},
+	form map[string][]string,
+	policy *BindPolicy,
+	searchDepthLevel int,
+) error {
 
-func mapForm(ptr interface{}, form map[string][]string, policy *BindPolicy) error {
 	// Get type of pointer
-	t := reflect.TypeOf(ptr).Elem()
+	t := reflect.TypeOf(model).Elem()
 
 	// Get value of pointer
-	v := reflect.ValueOf(ptr).Elem()
+	v := reflect.ValueOf(model).Elem()
 
+	// iterate over model field
 	for i := 0; i < t.NumField(); i++ {
+
 		tField := t.Field(i)
 		sField := v.Field(i)
 
+		// isTime flags if the field is of time.Time type
+		var isTime bool
+
 		// Check if field is settable - can be addresable or is public
-		if !sField.CanSet() {
+		// or if the field is of type Interface
+		if !sField.CanSet() || sField.Kind() == reflect.Interface {
 			continue
 		}
-
-		sFieldKind := sField.Kind()
 
 		// Check if the field has a tag query
-		formTag := tField.Tag.Get(policy.Tag)
+		fieldTag := tField.Tag.Get(policy.Tag)
 
 		// If tag is set to '-' don't map values
-		if formTag == "-" {
+		if fieldTag == "-" || (policy.TaggedOnly && fieldTag == "") {
 			continue
 		}
 
-		if formTag == "" {
-			if sFieldKind == reflect.Struct {
-				// mapQuery recursively if the field is a struct
-				err := mapForm(sField.Addr().Interface(), form, policy)
-				// check error only if the policy requirers it
-				if policy.FailOnError {
-					if err != nil {
+		// Init object if it is of ptr type.
+		if sField.Kind() == reflect.Ptr {
+			var initialize bool
+			switch tField.Type.Elem().Kind() {
+			case reflect.Ptr, reflect.Interface:
+				continue
+			case reflect.Struct:
+				if sField.IsNil() && policy.SearchDepthLevel > 0 {
+					initialize = true
+				} else if policy.SearchDepthLevel <= 0 {
+					continue
+				}
+			default:
+				// if the sField is nil - create new item of type given struct type
+				if sField.IsNil() {
+					initialize = true
+				}
+			}
+			if initialize {
+				sField.Set(reflect.New(tField.Type.Elem()))
+				sField = sField.Elem()
+			}
+		}
+
+		if sField.Kind() == reflect.Struct {
+			_, isTime = sField.Interface().(time.Time)
+			if !isTime {
+				if searchDepthLevel > 0 {
+					// mapQuery recursively if the field is a struct
+					err := mapForm(sField.Addr().Interface(), form, policy, searchDepthLevel-1)
+					// check error only if the policy requirers it
+					if err != nil && policy.FailOnError {
 						return err
 					}
 				}
 				continue
-			} else if !policy.TaggedOnly {
-				// get the lowercased name of a field
-				formTag = strings.ToLower(tField.Name)
-			} else {
-				// if the policy is tagged only continue
-				continue
 			}
 		}
 
+		if fieldTag == "" {
+			fieldTag = strings.ToLower(tField.Name)
+		}
+
 		// Check if the query contains the tag
-		formValue, ok := form[formTag]
+		formValue, ok := form[fieldTag]
 		if !ok {
 			continue
 		}
-
 		elemNum := len(formValue)
 
 		// The query value can conatin more than one value
 		// If the field is a slice and the queryValue
 		// has any values assign it if possible
-		if sFieldKind == reflect.Slice && elemNum > 0 {
+		if sField.Kind() == reflect.Slice {
+			if elemNum <= 0 {
+				continue
+			}
 			sliceKind := sField.Type().Elem().Kind()
 			fieldSlice := reflect.MakeSlice(sField.Type(), elemNum, elemNum)
+
+			// Check if the field is a slice of time.Time
+			if sliceKind == reflect.Struct {
+
+				_, isTime = fieldSlice.Index(0).Interface().(time.Time)
+				if isTime {
+					err := setSliceTimeField(formValue, tField, fieldSlice, policy.FailOnError)
+					if err != nil && policy.FailOnError {
+						return err
+					}
+				}
+				continue
+			}
+
 			// Iterate over query elements and add to fieldSlice
-			for j := 0; j < elemNum; j++ {
+			for i := 0; i < elemNum; i++ {
 				// set with given value
-				err := setFieldWithType(sliceKind, formValue[j], fieldSlice.Index(j))
-				if policy.FailOnError && err != nil {
+				err := setFieldWithType(sliceKind, formValue[i], fieldSlice.Index(i))
+				if err != nil && policy.FailOnError {
 					return err
 				}
 			}
-			// Set 'ptr' value for field of index 'i' with 'fieldSlice'
+
+			// Set 'model' value for field of index 'i' with 'fieldSlice'
 			v.Field(i).Set(fieldSlice)
+		} else if isTime {
+			err := setTimeField(formValue[0], tField, sField)
+			if policy.FailOnError && err != nil {
+				return err
+			}
 		} else {
 			// check if the field is of type time
-			if _, isTime := sField.Interface().(time.Time); isTime {
-				err := setTimeField(formValue[0], tField, sField)
-				if policy.FailOnError && err != nil {
-					return err
-				}
-			} else {
-				err := setFieldWithType(tField.Type.Kind(), formValue[0], sField)
-				if policy.FailOnError && err != nil {
-					return err
-				}
+			err := setFieldWithType(tField.Type.Kind(), formValue[0], sField)
+			if policy.FailOnError && err != nil {
+				return err
 			}
 		}
 	}
@@ -295,34 +329,70 @@ func setBoolField(val string, field reflect.Value) (err error) {
 }
 
 func setTimeField(val string, structField reflect.StructField, value reflect.Value) error {
-	timeFormat := structField.Tag.Get("time_format")
-	if timeFormat == "" {
-		return errors.New("Blank time format")
+	timeFormat, local, err := prepareTimeField(structField)
+	if err != nil {
+		return err
 	}
-
 	if val == "" {
 		value.Set(reflect.ValueOf(time.Time{}))
 		return nil
 	}
 
-	l := time.Local
-	if isUTC, _ := strconv.ParseBool(structField.Tag.Get("time_utc")); isUTC {
-		l = time.UTC
-	}
-
-	if locTag := structField.Tag.Get("time_location"); locTag != "" {
-		loc, err := time.LoadLocation(locTag)
-		if err != nil {
-			return err
-		}
-		l = loc
-	}
-
-	t, err := time.ParseInLocation(timeFormat, val, l)
+	t, err := time.ParseInLocation(timeFormat, val, local)
 	if err != nil {
 		return err
 	}
 
 	value.Set(reflect.ValueOf(t))
 	return nil
+}
+
+func setSliceTimeField(
+	values []string,
+	structField reflect.StructField,
+	value reflect.Value,
+	failOnError bool,
+) error {
+	timeFormat, local, err := prepareTimeField(structField)
+	if err != nil {
+		return err
+	}
+
+	for i := 0; i < len(values); i++ {
+		if values[i] == "" {
+			value.Index(i).Set(reflect.ValueOf(time.Time{}))
+			continue
+		}
+
+		t, err := time.ParseInLocation(timeFormat, values[i], local)
+		if err != nil && failOnError {
+			return err
+		}
+		value.Index(i).Set(reflect.ValueOf(t))
+	}
+	return nil
+
+}
+
+func prepareTimeField(
+	structField reflect.StructField,
+) (timeFormat string, local *time.Location, err error) {
+	timeFormat = structField.Tag.Get("time_format")
+	if timeFormat == "" {
+		err = errors.New("Blank time format")
+		return
+	}
+
+	local = time.Local
+	if isUTC, _ := strconv.ParseBool(structField.Tag.Get("time_utc")); isUTC {
+		local = time.UTC
+	}
+
+	if locTag := structField.Tag.Get("time_location"); locTag != "" {
+		local, err = time.LoadLocation(locTag)
+		if err != nil {
+			return
+		}
+	}
+	return
 }

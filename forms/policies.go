@@ -23,21 +23,6 @@ func (p BindPolicy) Copy() *BindPolicy {
 	return &policyCopy
 }
 
-// ListPolicy is a set of rules used during the process of model
-// binding, enhanced with the 'List-parameters' for the list handler function.
-type ListPolicy struct {
-	BindPolicy
-	DefaultLimit int
-	WithCount    bool
-}
-
-// New creates a copy of the list policy.
-func (p ListPolicy) Copy() *ListPolicy {
-	policyCopy := p
-	policy := &policyCopy
-	return policy
-}
-
 // ParamPolicy is a set of rules used during the process of
 // routing/ url params.
 // Enhances the BindPolicy with DeepSearch field. This field defines if the
@@ -64,22 +49,6 @@ var (
 		FailOnError:      false,
 		Tag:              "form",
 		SearchDepthLevel: 0,
-	}
-
-	// DefaultJSONPolicy defines the BindPolicy for the BindJSON function.
-	// by default the policy allows returning errors if occured during decoding.
-	DefaultJSONPolicy = BindPolicy{
-		FailOnError: true,
-	}
-
-	// DefaultListPolicy is a default ListPolicy.
-	// It uses DefaultBindPolicy as a base
-	// Sets the DefaultLimit to 10
-	// WithCount field is set to true
-	DefaultListPolicy = ListPolicy{
-		BindPolicy:   DefaultBindPolicy,
-		DefaultLimit: 10,
-		WithCount:    true,
 	}
 
 	// DefaultParamPolicy is a default ParamPolicy.

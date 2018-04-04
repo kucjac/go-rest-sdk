@@ -93,10 +93,10 @@ func TestMapForm(t *testing.T) {
 				"emptybool":    {""},
 			}
 			Convey("Using policy that throws errors", func() {
-				policy := &BindPolicy{FailOnError: true, Tag: "form"}
+				policy := &BindPolicy{FailOnError: true, Tag: "form", SearchDepthLevel: 1}
 
 				Convey("mapForm function match all fields within that struct", func() {
-					err := mapForm(mapTestObj, correct, policy)
+					err := mapForm(mapTestObj, correct, policy, policy.SearchDepthLevel)
 
 					So(err, ShouldBeNil)
 
@@ -120,7 +120,7 @@ func TestMapForm(t *testing.T) {
 				})
 			})
 		})
-		Convey("Using policy that does throw errors", func() {
+		Convey("Using policy that does throw errors and is taggedOnly", func() {
 			policy := &BindPolicy{FailOnError: true, Tag: "testing", TaggedOnly: true}
 
 			Convey("Having a map containg one correct and one incorrect value", func() {
@@ -130,7 +130,7 @@ func TestMapForm(t *testing.T) {
 
 				Convey("Should not add any value if one of form arguments are incorrect", func() {
 					mapTest2Obj := &mapTest{}
-					err := mapForm(mapTest2Obj, mapform, policy)
+					err := mapForm(mapTest2Obj, mapform, policy, policy.SearchDepthLevel)
 
 					So(err, ShouldBeError)
 					So(mapTest2Obj.IntSlice, ShouldNotContain, 1)
@@ -143,7 +143,7 @@ func TestMapForm(t *testing.T) {
 				}
 				Convey("Should not bind incorrect value", func() {
 					mapTestObj3 := &mapTest{}
-					err := mapForm(mapTestObj3, mapform2, policy)
+					err := mapForm(mapTestObj3, mapform2, policy, policy.SearchDepthLevel)
 
 					So(err, ShouldBeError)
 					So(mapTestObj3.Uint8Field, ShouldNotEqual, -1)
@@ -157,7 +157,8 @@ func TestMapForm(t *testing.T) {
 				}
 				Convey("Should throw error and not bind any value to it", func() {
 					mapTestObj4 := &mapTest{}
-					err := mapForm(mapTestObj4, mapform3, &BindPolicy{FailOnError: true})
+					policy := &BindPolicy{FailOnError: true, SearchDepthLevel: 1}
+					err := mapForm(mapTestObj4, mapform3, policy, policy.SearchDepthLevel)
 
 					So(mapTestObj4.Fooness.BarNess, ShouldBeZeroValue)
 					So(err, ShouldBeError)
@@ -173,10 +174,75 @@ func TestMapForm(t *testing.T) {
 				mapTimeStruct := map[string][]string{"date": {"200601-02"}}
 				policy := DefaultBindPolicy.Copy()
 				policy.FailOnError = true
-				err := mapForm(&TimeStruct{}, mapTimeStruct, policy)
+				err := mapForm(&TimeStruct{}, mapTimeStruct, policy, policy.SearchDepthLevel)
 				So(err, ShouldBeError)
 			})
 		})
+
+		Convey("Having a struct that contain ptr to an object", func() {
+			type StructWithPtr struct {
+				IntPtr       *int `form:"intpointer"`
+				StrPtr       *Model
+				InterfacePtr *IDSetter
+			}
+			Convey(`If the fields are not initialized, 
+				then new objects should be created`, func() {
+				valueMap := map[string][]string{"intpoitner": {"1"}}
+				model := new(StructWithPtr)
+				policy := DefaultBindPolicy.Copy()
+				err := mapForm(model, valueMap, policy, policy.SearchDepthLevel)
+				So(err, ShouldBeNil)
+			})
+			Convey(`If the policy is of SearchDepthLevel greater than 0`, func() {
+				valueMap := map[string][]string{"intpointer": {"1"}}
+				model := new(StructWithPtr)
+				policy := DefaultBindPolicy.Copy()
+				policy.SearchDepthLevel = 1
+				err := mapForm(model, valueMap, policy, policy.SearchDepthLevel)
+				So(err, ShouldBeNil)
+			})
+
+		})
+		Convey("Having a struct containing slice of time.Time", func() {
+			type StructWithTimes struct {
+				Dates []time.Time `form:"dates" time_format:"2006-01-02"`
+			}
+
+			Convey("If values are correct slice of time.Time should be assigned", func() {
+				valueMap := map[string][]string{"dates": {"2001-01-23", "2017-04-13", ""}}
+				policy := DefaultBindPolicy.Copy()
+				model := new(StructWithTimes)
+				err := mapForm(model, valueMap, policy, policy.SearchDepthLevel)
+				So(err, ShouldBeNil)
+
+			})
+			Convey("If one of values is not correct and the policy is FailOnError", func() {
+				valueMap := map[string][]string{"dates": {"20012-210-1", "2017-03-11"}}
+				policy := DefaultBindPolicy.Copy()
+				policy.FailOnError = true
+				model := new(StructWithTimes)
+				err := mapForm(model, valueMap, policy, policy.SearchDepthLevel)
+				So(err, ShouldBeError)
+			})
+			Convey("If the values is empty slice", func() {
+				valueMap := map[string][]string{"dates": {}}
+				policy := DefaultBindPolicy.Copy()
+				model := new(StructWithTimes)
+				err := mapForm(model, valueMap, policy, policy.SearchDepthLevel)
+				So(err, ShouldBeNil)
+			})
+			Convey("If the struct have incorrect time tags", func() {
+				type StructWithTimesNoTags struct {
+					Dates []time.Time `form:"dates"`
+				}
+				valueMap := map[string][]string{"dates": {"2017-01-01"}}
+				policy := DefaultBindPolicy.Copy()
+				model := new(StructWithTimesNoTags)
+				err := mapForm(model, valueMap, policy, policy.SearchDepthLevel)
+				So(err, ShouldBeNil)
+			})
+		})
+
 	})
 }
 
@@ -199,12 +265,11 @@ func TestBindQuery(t *testing.T) {
 		Convey("Providing no policy, the default would be set", func() {
 			var policy *BindPolicy = nil
 
-			Convey("With the model of type Foo", func() {
+			Convey("With the model of type Foo, then nothing should happen", func() {
 				fooModel := &Foo{}
 				err := BindQuery(req, fooModel, policy)
 
 				So(err, ShouldBeNil)
-				So(fooModel.Bar, ShouldEqual, "content")
 			})
 		})
 	})
@@ -233,15 +298,12 @@ func TestBindJSON(t *testing.T) {
 
 		req := httptest.NewRequest("POST", "/jsontype", strings.NewReader(`{"Bar":"barcontent"}`))
 
-		Convey("Using no policy", func() {
-			var policy *BindPolicy
+		Convey("BindJSON decodes the body into a model of type Foo", func() {
+			model := Foo{}
+			err := BindJSON(req, &model)
+			So(err, ShouldBeNil)
+			So(model.Bar, ShouldEqual, "barcontent")
 
-			Convey("BindJSON decodes the body into a model of type Foo", func() {
-				model := Foo{}
-				err := BindJSON(req, &model, policy)
-				So(err, ShouldBeNil)
-				So(model.Bar, ShouldEqual, "barcontent")
-			})
 		})
 
 	})
@@ -249,16 +311,13 @@ func TestBindJSON(t *testing.T) {
 	Convey("Having a request with incorrect json body", t, func() {
 		req := httptest.NewRequest("POST", "/jsonincorrect", strings.NewReader(`{"Bar":"nobrackets"`))
 
-		Convey("Using a policy with FailOnError", func() {
-			var policy *BindPolicy = &BindPolicy{FailOnError: true}
+		Convey("Decoding the json request will return error", func() {
+			model := Foo{}
+			err := BindJSON(req, &model)
 
-			Convey("Decoding the json request will return error", func() {
-				model := Foo{}
-				err := BindJSON(req, &model, policy)
+			So(err, ShouldBeError)
+			So(model.Bar, ShouldBeZeroValue)
 
-				So(err, ShouldBeError)
-				So(model.Bar, ShouldBeZeroValue)
-			})
 		})
 	})
 }

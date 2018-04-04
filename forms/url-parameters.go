@@ -127,16 +127,24 @@ func mapParam(
 
 		// if sField is a Ptr check where it points to.
 		if sField.Kind() == reflect.Ptr {
+			var initialize bool
 			switch tField.Type.Elem().Kind() {
-			case reflect.Ptr, reflect.Slice, reflect.Array, reflect.Interface:
+			case reflect.Ptr, reflect.Interface, reflect.Slice, reflect.Array:
 				continue
-			default:
-				// if the sField is nil - create new item of type given struct type
+			case reflect.Struct:
 				if sField.IsNil() && policy.SearchDepthLevel > 0 {
-					sField.Set(reflect.New(tField.Type.Elem()))
+					initialize = true
 				} else if policy.SearchDepthLevel <= 0 {
 					continue
 				}
+			default:
+				// if the sField is nil - create new item of type given struct type
+				if sField.IsNil() {
+					initialize = true
+				}
+			}
+			if initialize {
+				sField.Set(reflect.New(tField.Type.Elem()))
 				sField = sField.Elem()
 			}
 		}

@@ -7,9 +7,10 @@ of an application.
 This package enables binding queries, json forms and url params (third-party router/mux libraries)
 to the models of unknown type and unknown fields during the runtime of an application.
 
-Few functions were fetched from *github.com/gin-gonic/gin/binding* where some were enhanced with binding policies.
-
+The binding functions were written so that they use policies.
 The policies sets the rules for the binding functions mechanics.
+
+Few functions were fetched from github.com/gin-gonic/gin/binding.
 
 ### Binding functions:
 The package contains three basic binding functions:
@@ -21,7 +22,7 @@ func BindQuery(req *http.Request, model interface{}, policy *Policy) error {
 }
 
 // BindJSON binds the request.Body to the provided model.
-func BindJSON(req *http.Request, model interface{}, policy *Policy) error {
+func BindJSON(req *http.Request, model interface{}) error {
 	// decode given request Body from JSON type and 
 	// match the fields to provided model.
 }
@@ -40,33 +41,22 @@ The basic policy structure is used for BindQuery and BindJSON as well as the roo
 ```go
 // Policy is a set of rules used during the process
 // of model binding
-type Policy struct {
-	TaggedOnly  bool
-	FailOnError bool
-	Tag         string
+type BindPolicy struct {
+	TaggedOnly  		bool
+	FailOnError 		bool
+	Tag         		string
+	SearchDepthLevel 	int
 }
 ```
-The ListPolicy is based on the 'Policy' enhanced by the parameters used by list	handlers functions.
-```go
-// ListPolicy is a set of rules used during the process of model
-// binding, enhanced with the 'List-parameters' for the list handler function.
-type ListPolicy struct {
-	Policy
-	DefaultLimit int
-	WithCount    bool
-}
-```
-
 The ParamPolicy is based on the 'Policy'. It is used in BindParams function. It enhances the root policy with the 
 possibility of deep search - bind multiple url parameters.
 ```go
 // ParamPolicy is a set of rules used during the process of
 // routing/ url params.
-// Enhances the Policy with DeepSearch field. This field defines if the
-// Param binding function should check every model's field.
+// Enhances the Policy with IDOnly field. 
 type ParamPolicy struct {
-	Policy
-	DeepSearch bool
+	BindPolicy
+	IDOnly bool
 }
 ```
 
@@ -76,11 +66,11 @@ policies.
 ```go
 
 // Let's specify custom policy
-var MyCustomPolicy *Policy
+var MyCustomPolicy *BindPolicy
 
-// It is a good practice to create it by copying the DefaultPolicy
+// It is a good practice to create it by copying the DefaultBindPolicy
 // and then customize it
-MyCustomPolicy = DefaultPolicy.New()
+MyCustomPolicy = DefaultBindPolicy.Copy()
 
 // Suppose the binding functions should look for the 'mycustomtag'
 MyCustomPolicy.Tag = 'mycustomtag'
@@ -153,7 +143,7 @@ func SomeHandlerFunc(rw http.ResponseWriter, req *http.Request) {
 	...
 	var model MyModel
 
-	var policy *Policy = forms.DefaultPolicy.New()
+	var policy *Policy = forms.DefaultBindPolicy.New()
 	policy.Tag = "myquerytag"
 	policy.FailOnError = true
 
